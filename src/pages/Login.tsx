@@ -22,11 +22,11 @@ export default function Login() {
   // Check if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      // Check for enrollment intent
+
       const intentStr = localStorage.getItem('enrollmentIntent');
       if (intentStr) {
         const intent = JSON.parse(intentStr);
-        // Check if intent is recent (within 1 hour)
+
         if (Date.now() - intent.timestamp < 3600000) {
           localStorage.removeItem('enrollmentIntent');
           navigate(`/courses/${intent.courseSlug}`);
@@ -42,7 +42,7 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
 
-    const success = await login(formData.email, formData.password, 'student');
+    const success = await login(formData.email, formData.password);
 
     if (success) {
       toast({
@@ -50,11 +50,11 @@ export default function Login() {
         description: 'You have successfully logged in.',
       });
       
-      // Check for enrollment intent
+
       const intentStr = localStorage.getItem('enrollmentIntent');
       if (intentStr) {
         const intent = JSON.parse(intentStr);
-        // Check if intent is recent (within 1 hour)
+
         if (Date.now() - intent.timestamp < 3600000) {
           localStorage.removeItem('enrollmentIntent');
           navigate(`/courses/${intent.courseSlug}`);
@@ -67,7 +67,7 @@ export default function Login() {
     } else {
       toast({
         title: 'Login failed',
-        description: 'Invalid email or password. Try: john.doe@example.com / student123',
+        description: 'Invalid email or password.',
         variant: 'destructive',
       });
     }

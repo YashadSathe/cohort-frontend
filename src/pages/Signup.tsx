@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,10 +13,17 @@ const countries = ['USA', 'Canada', 'UK', 'India', 'Australia', 'Germany', 'Othe
 
 export default function Signup() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams()
+
+  // detect invite code
+  const inviteCode = searchParams.get('invite');
+  const isMentorSignup = !!inviteCode;
+
   const { register, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -26,27 +33,21 @@ export default function Signup() {
     city: '',
     state: '',
     country: '',
+    // student specific
     college: '',
+    // mentor specific
+    bio: '',
+    expertise: '',
+    experience: '',
+    inviteCode: inviteCode || '',
   });
 
-  // Check if already authenticated
+  // Check authentication
   useEffect(() => {
     if (isAuthenticated) {
-      // Check for enrollment intent
-      const intentStr = localStorage.getItem('enrollmentIntent');
-      if (intentStr) {
-        const intent = JSON.parse(intentStr);
-        // Check if intent is recent (within 1 hour)
-        if (Date.now() - intent.timestamp < 3600000) {
-          localStorage.removeItem('enrollmentIntent');
-          navigate(`/courses/${intent.courseSlug}`);
-          return;
-        }
-        localStorage.removeItem('enrollmentIntent');
-      }
-      navigate('/student/dashboard');
+      navigate(isMentorSignup ? '/mentor/dashboard' : '/student/dashboard');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, isMentorSignup]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,32 +76,19 @@ export default function Signup() {
 
     if (success) {
       toast({
-        title: 'Account created!',
-        description: 'Welcome to LearnHub. Start exploring courses!',
+        title: isMentorSignup ? 'Mentor Account Created!' : 'Welcome to LearnHub!',
+        description: isMentorSignup 
+          ? 'Your mentor profile is ready.' 
+          : 'Start exploring courses now!',
       });
-      
-      // Check for enrollment intent
-      const intentStr = localStorage.getItem('enrollmentIntent');
-      if (intentStr) {
-        const intent = JSON.parse(intentStr);
-        // Check if intent is recent (within 1 hour)
-        if (Date.now() - intent.timestamp < 3600000) {
-          localStorage.removeItem('enrollmentIntent');
-          navigate(`/courses/${intent.courseSlug}`);
-          return;
-        }
-        localStorage.removeItem('enrollmentIntent');
-      }
-      
-      navigate('/student/dashboard');
+      navigate(isMentorSignup ? '/mentor/dashboard' : '/student/dashboard');
     } else {
       toast({
         title: 'Registration failed',
-        description: 'Something went wrong. Please try again.',
+        description: isMentorSignup ? 'Invalid invite code or email taken.' : 'Registration failed.',
         variant: 'destructive',
       });
     }
-
     setIsLoading(false);
   };
 
