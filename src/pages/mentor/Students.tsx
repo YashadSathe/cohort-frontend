@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -30,23 +31,47 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Search, Users, Mail, Award, Download, MoreVertical, Eye, Loader2 } from 'lucide-react';
-import { cohortStudents } from '@/data/mentorMockData';
-import { courses } from '@/data/mockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { getCohortStudents, getMentorCourses } from '@/services/api';
+import type { CohortStudent, Course } from '@/services/api/types';
 import { useToast } from '@/hooks/use-toast';
 
 export default function MentorStudents() {
+  const { user } = useAuth();
   const { toast } = useToast();
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [students, setStudents] = useState<CohortStudent[]>([]);
+  const [assignedCourses, setAssignedCourses] = useState<Course[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('all');
   const [isEmailOpen, setIsEmailOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState<typeof cohortStudents[0] | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<CohortStudent | null>(null);
   const [emailForm, setEmailForm] = useState({ subject: '', message: '' });
   const [isLoading, setIsLoading] = useState(false);
 
-  const assignedCourses = courses.filter(c => c.mentorId === 'mentor-1');
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const [studentsData, coursesData] = await Promise.all([
+          getCohortStudents(user.id),
+          getMentorCourses(user.id),
+        ]);
+        setStudents(studentsData);
+        setAssignedCourses(coursesData);
+      } catch (error) {
+        console.error('Error fetching students:', error);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
 
-  const filteredStudents = cohortStudents.filter(student => {
+    fetchData();
+  }, [user?.id]);
+
+  const filteredStudents = students.filter(student => {
     const matchesSearch =
       student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       student.email.toLowerCase().includes(searchQuery.toLowerCase());
@@ -54,23 +79,23 @@ export default function MentorStudents() {
     return matchesSearch && matchesCourse;
   });
 
-  const activeStudents = cohortStudents.filter(s => {
+  const activeStudents = students.filter(s => {
     const lastActive = new Date(s.lastActive);
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     return lastActive >= weekAgo;
   }).length;
 
-  const avgProgress = Math.round(
-    cohortStudents.reduce((acc, s) => acc + s.progress, 0) / cohortStudents.length
-  );
+  const avgProgress = students.length > 0
+    ? Math.round(students.reduce((acc, s) => acc + s.progress, 0) / students.length)
+    : 0;
 
-  const handleViewStudent = (student: typeof cohortStudents[0]) => {
+  const handleViewStudent = (student: CohortStudent) => {
     setSelectedStudent(student);
     setIsViewOpen(true);
   };
 
-  const handleEmailStudent = (student: typeof cohortStudents[0]) => {
+  const handleEmailStudent = (student: CohortStudent) => {
     setSelectedStudent(student);
     setEmailForm({ subject: '', message: '' });
     setIsEmailOpen(true);
@@ -79,6 +104,8 @@ export default function MentorStudents() {
   const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    
+    // TODO: Replace with real API call
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     toast({
@@ -90,6 +117,38 @@ export default function MentorStudents() {
     setIsEmailOpen(false);
     setSelectedStudent(null);
   };
+
+  if (isPageLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-10 w-10 rounded-lg mb-2" />
+                <Skeleton className="h-6 w-16" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-32" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-64 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -111,7 +170,7 @@ export default function MentorStudents() {
               <Users className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{cohortStudents.length}</p>
+              <p className="text-2xl font-bold">{students.length}</p>
               <p className="text-sm text-muted-foreground">Total Students</p>
             </div>
           </CardContent>
@@ -136,7 +195,7 @@ export default function MentorStudents() {
             </div>
             <div>
               <p className="text-2xl font-bold">
-                {cohortStudents.filter(s => s.certificateStatus === 'issued').length}
+                {students.filter(s => s.certificateStatus === 'issued').length}
               </p>
               <p className="text-sm text-muted-foreground">Certified</p>
             </div>

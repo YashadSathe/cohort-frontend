@@ -1,19 +1,66 @@
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Award, Download, Lock, Calendar, CheckCircle2 } from 'lucide-react';
-import { courses, getCourseById } from '@/data/mockData';
-import { studentProgress } from '@/data/studentMockData';
+import { Award, Download, Lock, Calendar, CheckCircle2, Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { getStudentCertificates, getEnrolledCourses, getCourseProgress, getCourseById } from '@/services/api';
+import type { StudentProgress, Course } from '@/services/api';
+
+interface CertificateData extends StudentProgress {
+  course: Course | null;
+}
 
 export default function Certificates() {
-  // Get certificates based on student progress
-  const certificateData = studentProgress.map(progress => {
-    const course = getCourseById(progress.courseId);
-    return {
-      ...progress,
-      course,
+  const { user } = useAuth();
+  const [certificateData, setCertificateData] = useState<CertificateData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadCertificates = async () => {
+      if (user?.id) {
+        try {
+          // Get enrolled courses and their progress
+          const enrolledCourses = await getEnrolledCourses(user.id);
+          
+          const progressData = await Promise.all(
+            enrolledCourses.map(async (course) => {
+              const progress = await getCourseProgress(user.id, course.id);
+              return {
+                ...(progress || {
+                  courseId: course.id,
+                  completedTopics: [],
+                  totalTopics: course.totalTopics,
+                  attendedClasses: 0,
+                  totalClasses: 8,
+                  assignmentsCompleted: 0,
+                  totalAssignments: 3,
+                  certificateStatus: 'locked' as const,
+                }),
+                course,
+              };
+            })
+          );
+
+          setCertificateData(progressData);
+        } catch (error) {
+          console.error('Failed to load certificates:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
     };
-  }).filter(data => data.course);
+
+    loadCertificates();
+  }, [user?.id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   const issuedCertificates = certificateData.filter(c => c.certificateStatus === 'issued');
   const lockedCertificates = certificateData.filter(c => c.certificateStatus !== 'issued');

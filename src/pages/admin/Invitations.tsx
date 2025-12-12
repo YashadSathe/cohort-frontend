@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -20,20 +21,48 @@ import {
   Send,
   RefreshCw,
   Trash2,
+  Loader2,
 } from 'lucide-react';
-import { mentorInvitations, MentorInvitation } from '@/data/adminMockData';
+import {
+  getMentorInvitations,
+  sendMentorInvitation,
+  resendMentorInvitation,
+  deleteMentorInvitation,
+} from '@/services/api';
+import type { MentorInvitation } from '@/data/adminMockData';
 import { useToast } from '@/hooks/use-toast';
 
 export default function AdminInvitations() {
   const { toast } = useToast();
-  const [invitations, setInvitations] = useState<MentorInvitation[]>(mentorInvitations);
+  const [invitations, setInvitations] = useState<MentorInvitation[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [newInvite, setNewInvite] = useState({
     name: '',
     email: '',
   });
 
-  const handleSendInvitation = () => {
+  useEffect(() => {
+    const loadInvitations = async () => {
+      try {
+        const data = await getMentorInvitations();
+        setInvitations(data);
+      } catch (error) {
+        console.error('Failed to load invitations:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load invitations',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadInvitations();
+  }, [toast]);
+
+  const handleSendInvitation = async () => {
     if (!newInvite.email || !newInvite.name) {
       toast({
         title: 'Missing information',
@@ -43,38 +72,59 @@ export default function AdminInvitations() {
       return;
     }
 
-    const invitation: MentorInvitation = {
-      id: `inv-${Date.now()}`,
-      email: newInvite.email,
-      name: newInvite.name,
-      status: 'pending',
-      invitedAt: new Date().toISOString().split('T')[0],
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    };
+    setIsSubmitting(true);
+    try {
+      const invitation = await sendMentorInvitation(newInvite.email, newInvite.name);
+      setInvitations([invitation, ...invitations]);
+      setIsInviteOpen(false);
+      setNewInvite({ name: '', email: '' });
 
-    setInvitations([invitation, ...invitations]);
-    setIsInviteOpen(false);
-    setNewInvite({ name: '', email: '' });
-
-    toast({
-      title: 'Invitation sent',
-      description: `Invitation sent to ${newInvite.email}`,
-    });
+      toast({
+        title: 'Invitation sent',
+        description: `Invitation sent to ${newInvite.email}`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to send invitation',
+        variant: 'destructive',
+      });
+    }
+    setIsSubmitting(false);
   };
 
-  const handleResendInvitation = (invitation: MentorInvitation) => {
-    toast({
-      title: 'Invitation resent',
-      description: `New invitation sent to ${invitation.email}`,
-    });
+  const handleResendInvitation = async (invitation: MentorInvitation) => {
+    try {
+      const updated = await resendMentorInvitation(invitation.id);
+      setInvitations(invitations.map((i) => (i.id === invitation.id ? updated : i)));
+      toast({
+        title: 'Invitation resent',
+        description: `New invitation sent to ${invitation.email}`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to resend invitation',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleDeleteInvitation = (id: string) => {
-    setInvitations(invitations.filter((inv) => inv.id !== id));
-    toast({
-      title: 'Invitation deleted',
-      description: 'The invitation has been removed',
-    });
+  const handleDeleteInvitation = async (id: string) => {
+    try {
+      await deleteMentorInvitation(id);
+      setInvitations(invitations.filter((inv) => inv.id !== id));
+      toast({
+        title: 'Invitation deleted',
+        description: 'The invitation has been removed',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to delete invitation',
+        variant: 'destructive',
+      });
+    }
   };
 
   const getStatusBadge = (status: MentorInvitation['status']) => {
@@ -106,6 +156,20 @@ export default function AdminInvitations() {
   const pendingCount = invitations.filter((i) => i.status === 'pending').length;
   const acceptedCount = invitations.filter((i) => i.status === 'accepted').length;
   const expiredCount = invitations.filter((i) => i.status === 'expired').length;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+        <Skeleton className="h-96" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -157,8 +221,8 @@ export default function AdminInvitations() {
                 <Button variant="outline" onClick={() => setIsInviteOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleSendInvitation} className="gradient-primary border-0">
-                  <Send className="w-4 h-4 mr-2" />
+                <Button onClick={handleSendInvitation} className="gradient-primary border-0" disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
                   Send Invitation
                 </Button>
               </div>

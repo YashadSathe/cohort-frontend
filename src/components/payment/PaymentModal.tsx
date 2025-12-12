@@ -9,8 +9,9 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { CreditCard, Smartphone, Wallet, Loader2, CheckCircle2, XCircle, Tag } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { coupons, Course } from '@/data/mockData';
 import { useAuth } from '@/contexts/AuthContext';
+import { validateCoupon, processPayment } from '@/services/api';
+import type { Course, Coupon } from '@/services/api';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -23,11 +24,11 @@ type PaymentMethod = 'full' | 'emi-3' | 'emi-6' | 'upi';
 export function PaymentModal({ isOpen, onClose, course }: PaymentModalProps) {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('full');
   const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<typeof coupons[0] | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [couponError, setCouponError] = useState('');
 
   const calculateDiscount = () => {
@@ -46,51 +47,23 @@ export function PaymentModal({ isOpen, onClose, course }: PaymentModalProps) {
     return Math.round(totalWithInterest / months);
   };
 
-  const handleApplyCoupon = () => {
+  const handleApplyCoupon = async () => {
     setCouponError('');
-    const foundCoupon = coupons.find(
-      c => c.code.toLowerCase() === couponCode.toLowerCase()
-    );
+    
+    const result = await validateCoupon(course.id, couponCode, course.price);
 
-    if (!foundCoupon) {
-      setCouponError('Invalid coupon code');
+    if (!result.valid) {
+      setCouponError(result.error || 'Invalid coupon code');
       return;
     }
 
-    // Check if coupon is active
-    if (foundCoupon.status !== 'active') {
-      setCouponError('This coupon is no longer valid');
-      return;
+    if (result.coupon) {
+      setAppliedCoupon(result.coupon);
+      toast({
+        title: 'Coupon Applied!',
+        description: `You saved $${result.discountAmount}`,
+      });
     }
-
-    // Check expiry
-    const now = new Date();
-    const validUntil = new Date(foundCoupon.validUntil);
-    if (now > validUntil) {
-      setCouponError('This coupon has expired');
-      return;
-    }
-
-    // Check usage limit
-    if (foundCoupon.usedCount >= foundCoupon.usageLimit) {
-      setCouponError('This coupon has reached its usage limit');
-      return;
-    }
-
-    // Check applicable courses
-    if (foundCoupon.applicableCourses !== 'all' && 
-        !foundCoupon.applicableCourses.includes(course.id)) {
-      setCouponError('This coupon is not applicable to this course');
-      return;
-    }
-
-    setAppliedCoupon(foundCoupon);
-    toast({
-      title: 'Coupon Applied!',
-      description: `You saved $${foundCoupon.type === 'percentage' 
-        ? Math.round((course.price * foundCoupon.value) / 100) 
-        : foundCoupon.value}`,
-    });
   };
 
   const removeCoupon = () => {
@@ -114,13 +87,16 @@ export function PaymentModal({ isOpen, onClose, course }: PaymentModalProps) {
 
     setIsLoading(true);
 
-    // Simulate payment processing
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    const result = await processPayment({
+      courseId: course.id,
+      studentId: user?.id || '',
+      amount: finalPrice,
+      discount,
+      couponCode: appliedCoupon?.code,
+      paymentMethod,
+    });
 
-    // Simulate 90% success rate
-    const isSuccess = Math.random() > 0.1;
-
-    if (isSuccess) {
+    if (result.success) {
       toast({
         title: 'Payment Successful!',
         description: `You are now enrolled in ${course.title}`,
@@ -130,7 +106,7 @@ export function PaymentModal({ isOpen, onClose, course }: PaymentModalProps) {
     } else {
       toast({
         title: 'Payment Failed',
-        description: 'Please try again or use a different payment method.',
+        description: result.error || 'Please try again or use a different payment method.',
         variant: 'destructive',
       });
     }

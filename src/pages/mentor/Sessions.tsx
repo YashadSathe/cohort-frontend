@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -16,8 +17,14 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Video, Calendar, Clock, Plus, ExternalLink, Loader2, CheckCircle2, Edit2 } from 'lucide-react';
-import { mentorSessions, MentorSession } from '@/data/mentorMockData';
-import { courses } from '@/data/mockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { 
+  getMentorSessions, 
+  getMentorCourses, 
+  createSession, 
+  updateSession 
+} from '@/services/api';
+import type { MentorSession, Course } from '@/services/api/types';
 import { useToast } from '@/hooks/use-toast';
 
 const reminderOptions = [
@@ -28,11 +35,14 @@ const reminderOptions = [
 ];
 
 export default function MentorSessions() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [sessions, setSessions] = useState(mentorSessions);
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [sessions, setSessions] = useState<MentorSession[]>([]);
+  const [assignedCourses, setAssignedCourses] = useState<Course[]>([]);
   const [editingSession, setEditingSession] = useState<MentorSession | null>(null);
   const [formData, setFormData] = useState({
     courseId: '',
@@ -45,7 +55,27 @@ export default function MentorSessions() {
     reminders: ['1-day', '1-hour'],
   });
 
-  const assignedCourses = courses.filter(c => c.mentorId === 'mentor-1');
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const [sessionsData, coursesData] = await Promise.all([
+          getMentorSessions(user.id),
+          getMentorCourses(user.id),
+        ]);
+        setSessions(sessionsData);
+        setAssignedCourses(coursesData);
+      } catch (error) {
+        console.error('Error fetching sessions:', error);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.id]);
+
   const upcomingSessions = sessions.filter(s => s.status === 'scheduled');
   const completedSessions = sessions.filter(s => s.status === 'completed');
   const liveSessions = sessions.filter(s => s.status === 'live');
@@ -63,25 +93,45 @@ export default function MentorSessions() {
     e.preventDefault();
     setIsLoading(true);
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const newSession = await createSession({
+        courseId: formData.courseId,
+        title: formData.title,
+        description: formData.description,
+        date: formData.date,
+        time: formData.time,
+        duration: formData.duration,
+        meetingLink: formData.meetingLink,
+        status: 'scheduled',
+      });
 
-    toast({
-      title: 'Session Scheduled',
-      description: 'Your live session has been created successfully.',
-    });
+      setSessions(prev => [...prev, newSession]);
 
-    setIsLoading(false);
-    setIsOpen(false);
-    setFormData({
-      courseId: '',
-      title: '',
-      description: '',
-      date: '',
-      time: '',
-      duration: '2 hours',
-      meetingLink: '',
-      reminders: ['1-day', '1-hour'],
-    });
+      toast({
+        title: 'Session Scheduled',
+        description: 'Your live session has been created successfully.',
+      });
+
+      setIsOpen(false);
+      setFormData({
+        courseId: '',
+        title: '',
+        description: '',
+        date: '',
+        time: '',
+        duration: '2 hours',
+        meetingLink: '',
+        reminders: ['1-day', '1-hour'],
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to create session.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleEditSession = (session: MentorSession) => {
@@ -101,49 +151,86 @@ export default function MentorSessions() {
 
   const handleUpdateSession = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingSession) return;
+    
     setIsLoading(true);
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const updated = await updateSession(editingSession.id, {
+        title: formData.title,
+        description: formData.description,
+        date: formData.date,
+        time: formData.time,
+        duration: formData.duration,
+        meetingLink: formData.meetingLink,
+      });
 
-    if (editingSession) {
+      setSessions(prev =>
+        prev.map(s => s.id === editingSession.id ? updated : s)
+      );
+
+      toast({
+        title: 'Session Updated',
+        description: 'Your session has been updated successfully.',
+      });
+
+      setIsEditOpen(false);
+      setEditingSession(null);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update session.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleStartSession = async (sessionId: string) => {
+    try {
+      await updateSession(sessionId, { status: 'live' });
       setSessions(prev =>
         prev.map(s =>
-          s.id === editingSession.id
-            ? {
-                ...s,
-                title: formData.title,
-                description: formData.description,
-                date: formData.date,
-                time: formData.time,
-                duration: formData.duration,
-                meetingLink: formData.meetingLink,
-              }
-            : s
+          s.id === sessionId ? { ...s, status: 'live' as const } : s
         )
       );
+      toast({
+        title: 'Session Started',
+        description: 'Your live session is now active.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to start session.',
+        variant: 'destructive',
+      });
     }
-
-    toast({
-      title: 'Session Updated',
-      description: 'Your session has been updated successfully.',
-    });
-
-    setIsLoading(false);
-    setIsEditOpen(false);
-    setEditingSession(null);
   };
 
-  const handleStartSession = (sessionId: string) => {
-    setSessions(prev =>
-      prev.map(s =>
-        s.id === sessionId ? { ...s, status: 'live' as const } : s
-      )
+  if (isPageLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-40" />
+        </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-24 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
     );
-    toast({
-      title: 'Session Started',
-      description: 'Your live session is now active.',
-    });
-  };
+  }
 
   return (
     <div className="space-y-6">
@@ -462,8 +549,8 @@ export default function MentorSessions() {
                     <Button variant="outline" size="sm" onClick={() => handleEditSession(session)}>
                       <Edit2 className="w-4 h-4 mr-1" /> Edit
                     </Button>
-                    <Button size="sm" className="gap-1" onClick={() => handleStartSession(session.id)}>
-                      Start <ExternalLink className="w-3 h-3" />
+                    <Button size="sm" onClick={() => handleStartSession(session.id)}>
+                      Start
                     </Button>
                   </div>
                 </div>
@@ -477,7 +564,7 @@ export default function MentorSessions() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-success" />
+            <CheckCircle2 className="w-5 h-5 text-muted-foreground" />
             Completed Sessions ({completedSessions.length})
           </CardTitle>
         </CardHeader>
@@ -492,14 +579,16 @@ export default function MentorSessions() {
                   className="flex items-center justify-between p-4 rounded-xl bg-muted/30"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
-                      <CheckCircle2 className="w-6 h-6 text-success" />
+                    <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center">
+                      <Video className="w-6 h-6 text-muted-foreground" />
                     </div>
                     <div>
                       <p className="font-medium">{session.title}</p>
-                      <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                        <span>{new Date(session.date).toLocaleDateString()}</span>
-                        <span>{session.time}</span>
+                      <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-4 h-4" />
+                          {new Date(session.date).toLocaleDateString()}
+                        </span>
                       </div>
                     </div>
                   </div>

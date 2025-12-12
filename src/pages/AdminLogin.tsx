@@ -5,15 +5,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GraduationCap, Eye, EyeOff, Loader2, Shield } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
+import { useAuthWithLoading } from '@/hooks/useAuthWithLoading';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const { login } = useAuth();
-  const { toast } = useToast();
+  const { login, isLoggingIn } = useAuthWithLoading();
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -21,25 +18,12 @@ export default function AdminLogin() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
 
     const success = await login(formData.email, formData.password, 'admin');
 
     if (success) {
-      toast({
-        title: 'Welcome back, Admin!',
-        description: 'You have successfully logged in.',
-      });
       navigate('/admin/dashboard');
-    } else {
-      toast({
-        title: 'Login failed',
-        description: 'Invalid email or password. Try: admin@learnhub.com / admin123',
-        variant: 'destructive',
-      });
     }
-
-    setIsLoading(false);
   };
 
   return (
@@ -98,8 +82,8 @@ export default function AdminLogin() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full gradient-primary border-0" disabled={isLoading}>
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              <Button type="submit" className="w-full gradient-primary border-0" disabled={isLoggingIn}>
+                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 Sign In
               </Button>
             </form>

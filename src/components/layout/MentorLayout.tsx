@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -30,7 +30,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
-import { getPendingSubmissions } from '@/data/mentorMockData';
+import { getPendingSubmissionsCount } from '@/services/api';
+import { ErrorBoundary } from '@/components/ui/error-boundary';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/mentor/dashboard' },
@@ -48,7 +49,22 @@ export function MentorLayout() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const pendingCount = getPendingSubmissions().length;
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    const fetchPendingCount = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const count = await getPendingSubmissionsCount(user.id);
+        setPendingCount(count);
+      } catch (error) {
+        console.error('Error fetching pending count:', error);
+      }
+    };
+
+    fetchPendingCount();
+  }, [user?.id]);
 
   const handleLogout = () => {
     logout();
@@ -186,7 +202,9 @@ export function MentorLayout() {
       {/* Main Content */}
       <main className="pt-16 lg:pl-64 min-h-screen">
         <div className="p-4 md:p-6 lg:p-8">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </div>
       </main>
     </div>

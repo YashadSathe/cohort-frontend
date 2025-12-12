@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -9,10 +10,40 @@ import {
   Award,
   Activity,
 } from 'lucide-react';
-import { systemStats, recentActivity } from '@/data/adminMockData';
-import { students, mentors, courses } from '@/data/mockData';
+import { getAdminDashboard, getAllMentors } from '@/services/api';
+import type { AdminDashboardData } from '@/services/api/types';
+import type { Mentor } from '@/data/mockData';
+import { AdminDashboardSkeleton } from '@/components/skeletons/DashboardSkeletons';
 
 export default function AdminDashboard() {
+  const [dashboardData, setDashboardData] = useState<AdminDashboardData | null>(null);
+  const [mentors, setMentors] = useState<Mentor[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [dashboard, mentorsList] = await Promise.all([
+          getAdminDashboard(),
+          getAllMentors(),
+        ]);
+        setDashboardData(dashboard);
+        setMentors(mentorsList);
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
+  if (isLoading || !dashboardData) {
+    return <AdminDashboardSkeleton />;
+  }
+
+  const { systemStats, recentActivity, topCourses } = dashboardData;
+
   const stats = [
     {
       title: 'Total Students',
@@ -107,8 +138,8 @@ export default function AdminDashboard() {
                 <p className="text-xs text-muted-foreground">Registered Mentors</p>
               </div>
               <div className="p-4 bg-muted/50 rounded-lg text-center">
-                <p className="text-2xl font-bold text-accent">{courses.length}</p>
-                <p className="text-xs text-muted-foreground">Published Courses</p>
+                <p className="text-2xl font-bold text-accent">{topCourses.length}</p>
+                <p className="text-xs text-muted-foreground">Top Courses</p>
               </div>
             </div>
           </CardContent>
@@ -177,35 +208,32 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {courses.slice(0, 5).map((course) => {
-                  const mentor = mentors.find((m) => m.id === course.mentorId);
-                  return (
-                    <tr key={course.id} className="border-b border-border/50">
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={course.thumbnail}
-                            alt={course.title}
-                            className="w-10 h-10 rounded-lg object-cover"
-                          />
-                          <span className="font-medium text-sm">{course.title}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-sm text-muted-foreground">
-                        {mentor?.name || 'Unknown'}
-                      </td>
-                      <td className="py-3 px-4 text-center text-sm">
-                        {course.totalStudents}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <Badge variant="secondary">{course.rating} ⭐</Badge>
-                      </td>
-                      <td className="py-3 px-4 text-right text-sm font-medium">
-                        ₹{((course.price * course.totalStudents) / 1000).toFixed(0)}K
-                      </td>
-                    </tr>
-                  );
-                })}
+                {topCourses.map(({ course, mentor, revenue }) => (
+                  <tr key={course.id} className="border-b border-border/50">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={course.thumbnail}
+                          alt={course.title}
+                          className="w-10 h-10 rounded-lg object-cover"
+                        />
+                        <span className="font-medium text-sm">{course.title}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-muted-foreground">
+                      {mentor?.name || 'Unknown'}
+                    </td>
+                    <td className="py-3 px-4 text-center text-sm">
+                      {course.totalStudents}
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <Badge variant="secondary">{course.rating} ⭐</Badge>
+                    </td>
+                    <td className="py-3 px-4 text-right text-sm font-medium">
+                      ₹{(revenue / 1000).toFixed(0)}K
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

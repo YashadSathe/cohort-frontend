@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,30 +16,46 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { courses, getCourseById } from '@/data/mockData';
-import { notifications, studentProgress, assignments, getProgressByCourse } from '@/data/studentMockData';
+import { getStudentDashboard, getCourseProgress, getCourseById } from '@/services/api';
+import type { StudentDashboardData, Course, Assignment } from '@/services/api';
+import { StudentDashboardSkeleton } from '@/components/skeletons/DashboardSkeletons';
 
 export default function StudentDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [dashboardData, setDashboardData] = useState<StudentDashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Get enrolled courses (mock: first 2 courses)
-  const enrolledCourses = courses.slice(0, 2);
-  
-  // Get upcoming class (mock)
-  const upcomingClass = {
-    courseTitle: 'Full-Stack Web Development',
-    sessionTitle: 'Week 1: HTML & CSS Deep Dive',
-    date: 'Dec 15, 2024',
-    time: '10:00 AM',
-    meetingLink: 'https://meet.google.com/abc-defg-hij',
-  };
+  useEffect(() => {
+    const loadDashboard = async () => {
+      if (user?.id) {
+        try {
+          const data = await getStudentDashboard(user.id);
+          setDashboardData(data);
+        } catch (error) {
+          console.error('Failed to load dashboard:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
 
-  // Get recent notifications
-  const recentNotifications = notifications.slice(0, 3);
+    loadDashboard();
+  }, [user?.id]);
 
-  // Get pending assignments
-  const pendingAssignments = assignments.filter(a => a.status === 'not-submitted' || a.status === 'rejected');
+  if (isLoading) {
+    return <StudentDashboardSkeleton />;
+  }
+
+  if (!dashboardData) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">Failed to load dashboard data</p>
+      </div>
+    );
+  }
+
+  const { enrolledCourses, upcomingClass, recentNotifications, pendingAssignments, stats } = dashboardData;
 
   return (
     <div className="space-y-8">
@@ -65,7 +82,7 @@ export default function StudentDashboard() {
               <BookOpen className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{enrolledCourses.length}</p>
+              <p className="text-2xl font-bold">{stats.enrolledCoursesCount}</p>
               <p className="text-sm text-muted-foreground">Enrolled Courses</p>
             </div>
           </CardContent>
@@ -77,7 +94,7 @@ export default function StudentDashboard() {
               <Video className="w-6 h-6 text-accent" />
             </div>
             <div>
-              <p className="text-2xl font-bold">4</p>
+              <p className="text-2xl font-bold">{stats.classesAttended}</p>
               <p className="text-sm text-muted-foreground">Classes Attended</p>
             </div>
           </CardContent>
@@ -89,7 +106,7 @@ export default function StudentDashboard() {
               <FileText className="w-6 h-6 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{pendingAssignments.length}</p>
+              <p className="text-2xl font-bold">{stats.pendingTasksCount}</p>
               <p className="text-sm text-muted-foreground">Pending Tasks</p>
             </div>
           </CardContent>
@@ -101,7 +118,7 @@ export default function StudentDashboard() {
               <Award className="w-6 h-6 text-warning" />
             </div>
             <div>
-              <p className="text-2xl font-bold">1</p>
+              <p className="text-2xl font-bold">{stats.certificatesCount}</p>
               <p className="text-sm text-muted-foreground">Certificates</p>
             </div>
           </CardContent>
@@ -112,35 +129,37 @@ export default function StudentDashboard() {
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
           {/* Upcoming Class */}
-          <Card className="border-primary/30 bg-gradient-to-r from-primary/5 to-transparent">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2">
-                <Video className="w-5 h-5 text-primary" />
-                Next Live Class
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <p className="font-semibold text-lg">{upcomingClass.sessionTitle}</p>
-                  <p className="text-sm text-muted-foreground">{upcomingClass.courseTitle}</p>
-                  <div className="flex items-center gap-4 mt-2 text-sm">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-4 h-4" />
-                      {upcomingClass.date}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-4 h-4" />
-                      {upcomingClass.time}
-                    </span>
+          {upcomingClass && (
+            <Card className="border-primary/30 bg-gradient-to-r from-primary/5 to-transparent">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2">
+                  <Video className="w-5 h-5 text-primary" />
+                  Next Live Class
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <p className="font-semibold text-lg">{upcomingClass.sessionTitle}</p>
+                    <p className="text-sm text-muted-foreground">{upcomingClass.courseTitle}</p>
+                    <div className="flex items-center gap-4 mt-2 text-sm">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4" />
+                        {upcomingClass.date}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-4 h-4" />
+                        {upcomingClass.time}
+                      </span>
+                    </div>
                   </div>
+                  <Button className="gradient-primary border-0">
+                    Join Class
+                  </Button>
                 </div>
-                <Button className="gradient-primary border-0">
-                  Join Class
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Enrolled Courses */}
           <Card>
@@ -151,37 +170,9 @@ export default function StudentDashboard() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
-              {enrolledCourses.map((course) => {
-                const progress = getProgressByCourse(course.id);
-                const progressPercent = progress 
-                  ? Math.round((progress.completedTopics.length / progress.totalTopics) * 100)
-                  : 0;
-                
-                return (
-                  <div
-                    key={course.id}
-                    className="flex items-start gap-4 p-4 rounded-xl bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
-                    onClick={() => navigate(`/student/courses/${course.id}`)}
-                  >
-                    <img
-                      src={course.thumbnail}
-                      alt={course.title}
-                      className="w-20 h-14 rounded-lg object-cover"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold truncate">{course.title}</h3>
-                      <p className="text-sm text-muted-foreground">{course.duration}</p>
-                      <div className="mt-2">
-                        <div className="flex items-center justify-between text-sm mb-1">
-                          <span className="text-muted-foreground">Progress</span>
-                          <span className="font-medium">{progressPercent}%</span>
-                        </div>
-                        <Progress value={progressPercent} className="h-2" />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {enrolledCourses.map((course) => (
+                <CourseProgressCard key={course.id} course={course} userId={user?.id || ''} navigate={navigate} />
+              ))}
             </CardContent>
           </Card>
 
@@ -201,42 +192,9 @@ export default function StudentDashboard() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {pendingAssignments.map((assignment) => {
-                    const course = getCourseById(assignment.courseId);
-                    const isOverdue = new Date(assignment.dueDate) < new Date();
-                    
-                    return (
-                      <div
-                        key={assignment.id}
-                        className="flex items-center justify-between p-4 rounded-xl bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
-                        onClick={() => navigate(`/student/assignments/${assignment.id}`)}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                            assignment.status === 'rejected' ? 'bg-destructive/10' : 'bg-warning/10'
-                          }`}>
-                            {assignment.status === 'rejected' ? (
-                              <AlertCircle className="w-5 h-5 text-destructive" />
-                            ) : (
-                              <FileText className="w-5 h-5 text-warning" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium">{assignment.title}</p>
-                            <p className="text-sm text-muted-foreground">{course?.title}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <Badge variant={isOverdue ? 'destructive' : assignment.status === 'rejected' ? 'destructive' : 'secondary'}>
-                            {assignment.status === 'rejected' ? 'Needs Revision' : isOverdue ? 'Overdue' : 'Pending'}
-                          </Badge>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Due {new Date(assignment.dueDate).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {pendingAssignments.map((assignment) => (
+                    <AssignmentCard key={assignment.id} assignment={assignment} navigate={navigate} />
+                  ))}
                 </div>
               )}
             </CardContent>
@@ -306,6 +264,90 @@ export default function StudentDashboard() {
             </CardContent>
           </Card>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Helper component for course progress
+function CourseProgressCard({ course, userId, navigate }: { course: Course; userId: string; navigate: (path: string) => void }) {
+  const [progressPercent, setProgressPercent] = useState(0);
+
+  useEffect(() => {
+    const loadProgress = async () => {
+      const progress = await getCourseProgress(userId, course.id);
+      if (progress) {
+        setProgressPercent(Math.round((progress.completedTopics.length / progress.totalTopics) * 100));
+      }
+    };
+    loadProgress();
+  }, [userId, course.id]);
+
+  return (
+    <div
+      className="flex items-start gap-4 p-4 rounded-xl bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
+      onClick={() => navigate(`/student/courses/${course.id}`)}
+    >
+      <img
+        src={course.thumbnail}
+        alt={course.title}
+        className="w-20 h-14 rounded-lg object-cover"
+      />
+      <div className="flex-1 min-w-0">
+        <h3 className="font-semibold truncate">{course.title}</h3>
+        <p className="text-sm text-muted-foreground">{course.duration}</p>
+        <div className="mt-2">
+          <div className="flex items-center justify-between text-sm mb-1">
+            <span className="text-muted-foreground">Progress</span>
+            <span className="font-medium">{progressPercent}%</span>
+          </div>
+          <Progress value={progressPercent} className="h-2" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Helper component for assignments
+function AssignmentCard({ assignment, navigate }: { assignment: Assignment; navigate: (path: string) => void }) {
+  const [course, setCourse] = useState<Course | null>(null);
+  const isOverdue = new Date(assignment.dueDate) < new Date();
+
+  useEffect(() => {
+    const loadCourse = async () => {
+      const c = await getCourseById(assignment.courseId);
+      setCourse(c);
+    };
+    loadCourse();
+  }, [assignment.courseId]);
+
+  return (
+    <div
+      className="flex items-center justify-between p-4 rounded-xl bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
+      onClick={() => navigate(`/student/assignments/${assignment.id}`)}
+    >
+      <div className="flex items-center gap-3">
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+          assignment.status === 'rejected' ? 'bg-destructive/10' : 'bg-warning/10'
+        }`}>
+          {assignment.status === 'rejected' ? (
+            <AlertCircle className="w-5 h-5 text-destructive" />
+          ) : (
+            <FileText className="w-5 h-5 text-warning" />
+          )}
+        </div>
+        <div>
+          <p className="font-medium">{assignment.title}</p>
+          <p className="text-sm text-muted-foreground">{course?.title}</p>
+        </div>
+      </div>
+      <div className="text-right">
+        <Badge variant={isOverdue ? 'destructive' : assignment.status === 'rejected' ? 'destructive' : 'secondary'}>
+          {assignment.status === 'rejected' ? 'Needs Revision' : isOverdue ? 'Overdue' : 'Pending'}
+        </Badge>
+        <p className="text-xs text-muted-foreground mt-1">
+          Due {new Date(assignment.dueDate).toLocaleDateString()}
+        </p>
       </div>
     </div>
   );

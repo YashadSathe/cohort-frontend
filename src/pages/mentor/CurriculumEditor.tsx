@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -29,16 +30,18 @@ import {
   Save,
   Loader2,
 } from 'lucide-react';
-import { getCourseById, Module, Topic } from '@/data/mockData';
+import { getCourseById, updateCourseCurriculum } from '@/services/api';
+import type { Course, Module, Topic } from '@/services/api/types';
 import { useToast } from '@/hooks/use-toast';
 
 export default function CurriculumEditor() {
   const { courseId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const course = getCourseById(courseId || '');
-
-  const [modules, setModules] = useState<Module[]>(course?.curriculum || []);
+  
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [course, setCourse] = useState<Course | null>(null);
+  const [modules, setModules] = useState<Module[]>([]);
   const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
   const [isTopicModalOpen, setIsTopicModalOpen] = useState(false);
   const [editingModule, setEditingModule] = useState<Module | null>(null);
@@ -48,6 +51,58 @@ export default function CurriculumEditor() {
 
   const [moduleForm, setModuleForm] = useState({ title: '', description: '' });
   const [topicForm, setTopicForm] = useState({ title: '', duration: '' });
+
+  useEffect(() => {
+    const fetchCourse = async () => {
+      if (!courseId) return;
+      
+      try {
+        const courseData = await getCourseById(courseId);
+        if (courseData) {
+          setCourse(courseData);
+          setModules(courseData.curriculum || []);
+        }
+      } catch (error) {
+        console.error('Error fetching course:', error);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+
+    fetchCourse();
+  }, [courseId]);
+
+  if (isPageLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-10 w-10" />
+          <div className="flex-1">
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(2)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-16 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-32" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-64 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!course) {
     return (
@@ -184,9 +239,17 @@ export default function CurriculumEditor() {
 
   const handleSaveCurriculum = async () => {
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    toast({ title: 'Curriculum Saved', description: 'All changes have been saved successfully.' });
-    setIsSaving(false);
+    
+    try {
+      if (courseId) {
+        await updateCourseCurriculum(courseId, modules);
+      }
+      toast({ title: 'Curriculum Saved', description: 'All changes have been saved successfully.' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to save curriculum.', variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const totalTopics = modules.reduce((acc, m) => acc + m.topics.length, 0);

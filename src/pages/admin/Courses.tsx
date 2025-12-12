@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -38,11 +39,11 @@ import {
   Pause,
   Play,
   Loader2,
-  Calendar,
   Clock,
   BookOpen,
 } from 'lucide-react';
-import { courses as initialCourses, mentors, Course } from '@/data/mockData';
+import { getAllCourses, getAllMentors, createCourse, updateCourse, deleteCourse } from '@/services/api';
+import type { Course, Mentor } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
 
 export default function AdminCourses() {
@@ -52,8 +53,10 @@ export default function AdminCourses() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isPauseOpen, setIsPauseOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [coursesData, setCoursesData] = useState(initialCourses);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [coursesData, setCoursesData] = useState<Course[]>([]);
+  const [mentors, setMentors] = useState<Mentor[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [pauseDates, setPauseDates] = useState({ from: '', to: '' });
   
@@ -75,6 +78,29 @@ export default function AdminCourses() {
     level: 'Beginner' as 'Beginner' | 'Intermediate' | 'Advanced',
   });
 
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [courses, mentorsList] = await Promise.all([
+          getAllCourses(),
+          getAllMentors(),
+        ]);
+        setCoursesData(courses);
+        setMentors(mentorsList);
+      } catch (error) {
+        console.error('Failed to load data:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load courses',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, [toast]);
+
   const filteredCourses = coursesData.filter(
     (c) =>
       c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -82,23 +108,39 @@ export default function AdminCourses() {
   );
 
   const handleCreateCourse = async () => {
-    setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    toast({
-      title: 'Course created',
-      description: `${newCourse.title} has been created successfully`,
-    });
-    setIsLoading(false);
-    setIsCreateOpen(false);
-    setNewCourse({
-      title: '',
-      description: '',
-      mentorId: '',
-      price: '',
-      duration: '',
-      level: 'Beginner',
-    });
+    setIsSubmitting(true);
+    try {
+      const created = await createCourse({
+        title: newCourse.title,
+        description: newCourse.description,
+        mentorId: newCourse.mentorId,
+        price: parseInt(newCourse.price) || 0,
+        duration: newCourse.duration,
+        level: newCourse.level,
+      });
+      
+      setCoursesData(prev => [created, ...prev]);
+      toast({
+        title: 'Course created',
+        description: `${newCourse.title} has been created successfully`,
+      });
+      setIsCreateOpen(false);
+      setNewCourse({
+        title: '',
+        description: '',
+        mentorId: '',
+        price: '',
+        duration: '',
+        level: 'Beginner',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to create course',
+        variant: 'destructive',
+      });
+    }
+    setIsSubmitting(false);
   };
 
   const handleViewCourse = (course: Course) => {
@@ -120,43 +162,52 @@ export default function AdminCourses() {
   };
 
   const handleUpdateCourse = async () => {
-    setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (!selectedCourse) return;
     
-    if (selectedCourse) {
-      setCoursesData(prev =>
-        prev.map(c =>
-          c.id === selectedCourse.id
-            ? {
-                ...c,
-                title: editForm.title,
-                description: editForm.description,
-                mentorId: editForm.mentorId,
-                price: parseInt(editForm.price) || c.price,
-                duration: editForm.duration,
-                level: editForm.level,
-              }
-            : c
-        )
-      );
+    setIsSubmitting(true);
+    try {
+      const updated = await updateCourse(selectedCourse.id, {
+        title: editForm.title,
+        description: editForm.description,
+        mentorId: editForm.mentorId,
+        price: parseInt(editForm.price) || selectedCourse.price,
+        duration: editForm.duration,
+        level: editForm.level,
+      });
+      
+      setCoursesData(prev => prev.map(c => c.id === selectedCourse.id ? updated : c));
+      toast({
+        title: 'Course updated',
+        description: `${editForm.title} has been updated successfully`,
+      });
+      setIsEditOpen(false);
+      setSelectedCourse(null);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update course',
+        variant: 'destructive',
+      });
     }
-    
-    toast({
-      title: 'Course updated',
-      description: `${editForm.title} has been updated successfully`,
-    });
-    setIsLoading(false);
-    setIsEditOpen(false);
-    setSelectedCourse(null);
+    setIsSubmitting(false);
   };
 
-  const handleDeleteCourse = (courseId: string, courseTitle: string) => {
-    setCoursesData(prev => prev.filter(c => c.id !== courseId));
-    toast({
-      title: 'Course deleted',
-      description: `${courseTitle} has been deleted`,
-      variant: 'destructive',
-    });
+  const handleDeleteCourse = async (courseId: string, courseTitle: string) => {
+    try {
+      await deleteCourse(courseId);
+      setCoursesData(prev => prev.filter(c => c.id !== courseId));
+      toast({
+        title: 'Course deleted',
+        description: `${courseTitle} has been deleted`,
+        variant: 'destructive',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to delete course',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handlePauseCourse = (course: Course) => {
@@ -166,37 +217,58 @@ export default function AdminCourses() {
   };
 
   const handleConfirmPause = async () => {
-    setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (!selectedCourse) return;
     
-    if (selectedCourse) {
-      setCoursesData(prev =>
-        prev.map(c =>
-          c.id === selectedCourse.id ? { ...c, status: 'paused' as const } : c
-        )
-      );
+    setIsSubmitting(true);
+    try {
+      const updated = await updateCourse(selectedCourse.id, { status: 'paused' as const });
+      setCoursesData(prev => prev.map(c => c.id === selectedCourse.id ? updated : c));
+      
+      toast({
+        title: 'Course paused',
+        description: `${selectedCourse?.title} has been paused from ${pauseDates.from} to ${pauseDates.to}`,
+      });
+      setIsPauseOpen(false);
+      setSelectedCourse(null);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to pause course',
+        variant: 'destructive',
+      });
     }
-    
-    toast({
-      title: 'Course paused',
-      description: `${selectedCourse?.title} has been paused from ${pauseDates.from} to ${pauseDates.to}`,
-    });
-    setIsLoading(false);
-    setIsPauseOpen(false);
-    setSelectedCourse(null);
+    setIsSubmitting(false);
   };
 
-  const handleResumeCourse = (courseId: string, courseTitle: string) => {
-    setCoursesData(prev =>
-      prev.map(c =>
-        c.id === courseId ? { ...c, status: 'active' as const } : c
-      )
-    );
-    toast({
-      title: 'Course resumed',
-      description: `${courseTitle} is now active`,
-    });
+  const handleResumeCourse = async (courseId: string, courseTitle: string) => {
+    try {
+      const updated = await updateCourse(courseId, { status: 'active' as const });
+      setCoursesData(prev => prev.map(c => c.id === courseId ? updated : c));
+      toast({
+        title: 'Course resumed',
+        description: `${courseTitle} is now active`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to resume course',
+        variant: 'destructive',
+      });
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <Skeleton key={i} className="h-72" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -300,8 +372,8 @@ export default function AdminCourses() {
                 <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleCreateCourse} className="gradient-primary border-0" disabled={isLoading}>
-                  {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                <Button onClick={handleCreateCourse} className="gradient-primary border-0" disabled={isSubmitting}>
+                  {isSubmitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                   Create Course
                 </Button>
               </div>
@@ -590,8 +662,8 @@ export default function AdminCourses() {
               <Button variant="outline" onClick={() => setIsEditOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleUpdateCourse} className="gradient-primary border-0" disabled={isLoading}>
-                {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              <Button onClick={handleUpdateCourse} className="gradient-primary border-0" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Update Course
               </Button>
             </div>
@@ -634,8 +706,8 @@ export default function AdminCourses() {
               <Button variant="outline" onClick={() => setIsPauseOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleConfirmPause} variant="destructive" disabled={isLoading}>
-                {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              <Button onClick={handleConfirmPause} variant="destructive" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Pause Course
               </Button>
             </div>

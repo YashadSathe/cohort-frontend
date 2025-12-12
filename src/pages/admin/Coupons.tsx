@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -28,13 +29,17 @@ import {
   Edit,
   Trash2,
   Copy,
+  Loader2,
 } from 'lucide-react';
-import { coupons, Coupon } from '@/data/mockData';
+import { getAllCoupons, createCoupon, deleteCoupon, toggleCouponStatus } from '@/services/api';
+import type { Coupon } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
 
 export default function AdminCoupons() {
   const { toast } = useToast();
-  const [couponList, setCouponList] = useState<Coupon[]>(coupons);
+  const [couponList, setCouponList] = useState<Coupon[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newCoupon, setNewCoupon] = useState({
     code: '',
@@ -46,7 +51,26 @@ export default function AdminCoupons() {
     status: 'active' as 'active' | 'expired' | 'disabled',
   });
 
-  const handleCreateCoupon = () => {
+  useEffect(() => {
+    const loadCoupons = async () => {
+      try {
+        const coupons = await getAllCoupons();
+        setCouponList(coupons);
+      } catch (error) {
+        console.error('Failed to load coupons:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load coupons',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadCoupons();
+  }, [toast]);
+
+  const handleCreateCoupon = async () => {
     if (!newCoupon.code || !newCoupon.value) {
       toast({
         title: 'Missing information',
@@ -56,51 +80,73 @@ export default function AdminCoupons() {
       return;
     }
 
-    const coupon: Coupon = {
-      id: `coupon-${Date.now()}`,
-      code: newCoupon.code.toUpperCase(),
-      type: newCoupon.type,
-      value: parseInt(newCoupon.value),
-      usageLimit: newCoupon.usageLimit ? parseInt(newCoupon.usageLimit) : 999,
-      usedCount: 0,
-      validFrom: newCoupon.validFrom,
-      validUntil: newCoupon.validUntil,
-      status: newCoupon.status,
-      applicableCourses: 'all',
-    };
+    setIsSubmitting(true);
+    try {
+      const created = await createCoupon({
+        code: newCoupon.code.toUpperCase(),
+        type: newCoupon.type,
+        value: parseInt(newCoupon.value),
+        usageLimit: newCoupon.usageLimit ? parseInt(newCoupon.usageLimit) : 999,
+        validFrom: newCoupon.validFrom,
+        validUntil: newCoupon.validUntil,
+        status: newCoupon.status,
+        applicableCourses: 'all',
+      });
 
-    setCouponList([coupon, ...couponList]);
-    setIsCreateOpen(false);
-    setNewCoupon({
-      code: '',
-      type: 'percentage',
-      value: '',
-      usageLimit: '',
-      validFrom: '',
-      validUntil: '',
-      status: 'active',
-    });
+      setCouponList([created, ...couponList]);
+      setIsCreateOpen(false);
+      setNewCoupon({
+        code: '',
+        type: 'percentage',
+        value: '',
+        usageLimit: '',
+        validFrom: '',
+        validUntil: '',
+        status: 'active',
+      });
 
-    toast({
-      title: 'Coupon created',
-      description: `Coupon ${coupon.code} has been created`,
-    });
+      toast({
+        title: 'Coupon created',
+        description: `Coupon ${created.code} has been created`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to create coupon',
+        variant: 'destructive',
+      });
+    }
+    setIsSubmitting(false);
   };
 
-  const handleToggleCoupon = (couponId: string) => {
-    setCouponList(
-      couponList.map((c) =>
-        c.id === couponId ? { ...c, status: c.status === 'active' ? 'disabled' : 'active' as const } : c
-      )
-    );
+  const handleToggleCoupon = async (couponId: string) => {
+    try {
+      const updated = await toggleCouponStatus(couponId);
+      setCouponList(couponList.map((c) => (c.id === couponId ? updated : c)));
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to toggle coupon status',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleDeleteCoupon = (couponId: string) => {
-    setCouponList(couponList.filter((c) => c.id !== couponId));
-    toast({
-      title: 'Coupon deleted',
-      description: 'The coupon has been removed',
-    });
+  const handleDeleteCoupon = async (couponId: string) => {
+    try {
+      await deleteCoupon(couponId);
+      setCouponList(couponList.filter((c) => c.id !== couponId));
+      toast({
+        title: 'Coupon deleted',
+        description: 'The coupon has been removed',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to delete coupon',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleCopyCode = (code: string) => {
@@ -113,6 +159,20 @@ export default function AdminCoupons() {
 
   const activeCount = couponList.filter((c) => c.status === 'active').length;
   const totalUses = couponList.reduce((acc, c) => acc + c.usedCount, 0);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+        <Skeleton className="h-96" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -233,7 +293,8 @@ export default function AdminCoupons() {
                 <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleCreateCoupon} className="gradient-primary border-0">
+                <Button onClick={handleCreateCoupon} className="gradient-primary border-0" disabled={isSubmitting}>
+                  {isSubmitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                   Create Coupon
                 </Button>
               </div>

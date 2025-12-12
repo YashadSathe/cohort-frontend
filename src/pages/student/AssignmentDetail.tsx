@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,9 +16,9 @@ import {
   Loader2,
   MessageSquare,
 } from 'lucide-react';
-import { getAssignmentById } from '@/data/studentMockData';
-import { getCourseById } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
+import { getAssignmentById, getCourseById, submitAssignment } from '@/services/api';
+import type { Assignment, Course } from '@/services/api';
 
 export default function AssignmentDetail() {
   const { assignmentId } = useParams();
@@ -26,9 +26,39 @@ export default function AssignmentDetail() {
   const { toast } = useToast();
   const [submissionUrl, setSubmissionUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [assignment, setAssignment] = useState<Assignment | null>(null);
+  const [course, setCourse] = useState<Course | null>(null);
 
-  const assignment = getAssignmentById(assignmentId || '');
-  const course = assignment ? getCourseById(assignment.courseId) : null;
+  useEffect(() => {
+    const loadData = async () => {
+      if (assignmentId) {
+        try {
+          const assignmentData = await getAssignmentById(assignmentId);
+          setAssignment(assignmentData);
+          
+          if (assignmentData) {
+            const courseData = await getCourseById(assignmentData.courseId);
+            setCourse(courseData);
+          }
+        } catch (error) {
+          console.error('Failed to load assignment:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadData();
+  }, [assignmentId]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (!assignment) {
     return (
@@ -97,16 +127,24 @@ export default function AssignmentDetail() {
 
     setIsSubmitting(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    toast({
-      title: 'Assignment Submitted!',
-      description: 'Your assignment has been submitted successfully.',
-    });
-    
-    setIsSubmitting(false);
-    navigate('/student/assignments');
+    try {
+      await submitAssignment(assignment.id, submissionUrl);
+      
+      toast({
+        title: 'Assignment Submitted!',
+        description: 'Your assignment has been submitted successfully.',
+      });
+      
+      navigate('/student/assignments');
+    } catch (error) {
+      toast({
+        title: 'Submission Failed',
+        description: 'Failed to submit assignment. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

@@ -1,16 +1,63 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Clock, Users, ArrowRight, Calendar, BookOpen } from 'lucide-react';
-import { courses } from '@/data/mockData';
-import { cohortStudents } from '@/data/mentorMockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { getMentorCourses, getCohortStudents } from '@/services/api';
+import type { Course, CohortStudent } from '@/services/api/types';
 
 export default function MentorCourses() {
   const navigate = useNavigate();
-  
-  // Mock: courses assigned to mentor-1
-  const assignedCourses = courses.filter(c => c.mentorId === 'mentor-1');
+  const { user } = useAuth();
+  const [isLoading, setIsLoading] = useState(true);
+  const [assignedCourses, setAssignedCourses] = useState<Course[]>([]);
+  const [students, setStudents] = useState<CohortStudent[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const [coursesData, studentsData] = await Promise.all([
+          getMentorCourses(user.id),
+          getCohortStudents(user.id),
+        ]);
+        setAssignedCourses(coursesData);
+        setStudents(studentsData);
+      } catch (error) {
+        console.error('Error fetching courses:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.id]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <div className="grid md:grid-cols-2 gap-6">
+          {[...Array(2)].map((_, i) => (
+            <Card key={i}>
+              <Skeleton className="h-40 w-full" />
+              <CardContent className="p-5 space-y-4">
+                <Skeleton className="h-6 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -28,8 +75,8 @@ export default function MentorCourses() {
       ) : (
         <div className="grid md:grid-cols-2 gap-6">
           {assignedCourses.map((course) => {
-            const enrolledCount = cohortStudents.length;
-            const activeCount = cohortStudents.filter(s => {
+            const enrolledCount = students.length;
+            const activeCount = students.filter(s => {
               const lastActive = new Date(s.lastActive);
               const weekAgo = new Date();
               weekAgo.setDate(weekAgo.getDate() - 7);

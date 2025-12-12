@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Camera, Loader2, Save, Plus, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { updateMentorProfile } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 
 export default function MentorProfile() {
@@ -63,14 +64,32 @@ export default function MentorProfile() {
     e.preventDefault();
     setIsLoading(true);
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      if (user?.id) {
+        await updateMentorProfile(user.id, {
+          name: formData.name,
+          phone: formData.phone,
+          bio: formData.bio,
+          expertise: formData.expertise,
+          experience: formData.experience,
+          linkedIn: formData.linkedIn,
+          avatar: avatarPreview || user?.avatar,
+        } as any);
+      }
 
-    toast({
-      title: 'Profile Updated',
-      description: 'Your profile has been updated successfully.',
-    });
-
-    setIsLoading(false);
+      toast({
+        title: 'Profile Updated',
+        description: 'Your profile has been updated successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update profile.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,14 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Settings as SettingsIcon,
   Save,
-  Mail,
   Globe,
   Shield,
   Database,
-  Bell,
   Lock,
   Eye,
   EyeOff,
@@ -22,16 +20,22 @@ import {
   Download,
   Trash2,
 } from 'lucide-react';
-import { systemSettings, SystemSetting } from '@/data/adminMockData';
+import {
+  getSystemSettings,
+  saveSystemSettings,
+  clearCache,
+  exportAllData,
+} from '@/services/api';
+import type { SystemSetting } from '@/data/adminMockData';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { students, mentors, courses } from '@/data/mockData';
 
 export default function AdminSettings() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { clearAllData } = useAuth();
-  const [settings, setSettings] = useState<SystemSetting[]>(systemSettings);
+  const [settings, setSettings] = useState<SystemSetting[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -45,6 +49,25 @@ export default function AdminSettings() {
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [primaryDevice, setPrimaryDevice] = useState(false);
 
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const data = await getSystemSettings();
+        setSettings(data);
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load settings',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadSettings();
+  }, [toast]);
+
   const handleSettingChange = (key: string, value: string) => {
     setSettings(
       settings.map((s) => (s.key === key ? { ...s, value } : s))
@@ -53,12 +76,21 @@ export default function AdminSettings() {
 
   const handleSaveSettings = async () => {
     setIsSaving(true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const settingsToSave = settings.map(s => ({ key: s.key, value: s.value }));
+      await saveSystemSettings(settingsToSave);
+      toast({
+        title: 'Settings saved',
+        description: 'Your changes have been saved successfully',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to save settings',
+        variant: 'destructive',
+      });
+    }
     setIsSaving(false);
-    toast({
-      title: 'Settings saved',
-      description: 'Your changes have been saved successfully',
-    });
   };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -73,6 +105,7 @@ export default function AdminSettings() {
     }
 
     setIsSaving(true);
+    // TODO: Replace with real API call for password change
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     toast({
@@ -90,63 +123,77 @@ export default function AdminSettings() {
     }
 
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      await clearCache();
+      
+      // Clear all localStorage and session data
+      clearAllData();
 
-    // Clear all localStorage and session data
-    clearAllData();
+      toast({
+        title: 'Cache Cleared',
+        description: 'All cache has been cleared. Redirecting to home...',
+      });
 
-    toast({
-      title: 'Cache Cleared',
-      description: 'All cache has been cleared. Redirecting to home...',
-    });
-
+      // Redirect to landing page
+      setTimeout(() => {
+        navigate('/');
+      }, 500);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to clear cache',
+        variant: 'destructive',
+      });
+    }
     setIsSaving(false);
-    
-    // Redirect to landing page
-    setTimeout(() => {
-      navigate('/');
-    }, 500);
   };
 
   const handleExportData = async () => {
     setIsSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const { students, mentors, courses } = await exportAllData();
 
-    // Create CSV content
-    const studentsCSV = [
-      'ID,Name,Email,City,State,Country,Status,Created At',
-      ...students.map(s => `${s.id},${s.name},${s.email},${s.city},${s.state},${s.country},${s.status},${s.createdAt}`)
-    ].join('\n');
+      // Create CSV content
+      const studentsCSV = [
+        'ID,Name,Email,City,State,Country,Status,Created At',
+        ...students.map(s => `${s.id},${s.name},${s.email},${s.city},${s.state},${s.country},${s.status},${s.createdAt}`)
+      ].join('\n');
 
-    const mentorsCSV = [
-      'ID,Name,Email,Experience,Status,Created At',
-      ...mentors.map(m => `${m.id},${m.name},${m.email},${m.experience},${m.status},${m.createdAt}`)
-    ].join('\n');
+      const mentorsCSV = [
+        'ID,Name,Email,Experience,Status,Created At',
+        ...mentors.map(m => `${m.id},${m.name},${m.email},${m.experience},${m.status},${m.createdAt}`)
+      ].join('\n');
 
-    const coursesCSV = [
-      'ID,Title,Category,Level,Price,Students,Status',
-      ...courses.map(c => `${c.id},${c.title},${c.category},${c.level},${c.price},${c.totalStudents},${c.status}`)
-    ].join('\n');
+      const coursesCSV = [
+        'ID,Title,Category,Level,Price,Students,Status',
+        ...courses.map(c => `${c.id},${c.title},${c.category},${c.level},${c.price},${c.totalStudents},${c.status}`)
+      ].join('\n');
 
-    // Combine all data
-    const allData = `=== STUDENTS ===\n${studentsCSV}\n\n=== MENTORS ===\n${mentorsCSV}\n\n=== COURSES ===\n${coursesCSV}`;
+      // Combine all data
+      const allData = `=== STUDENTS ===\n${studentsCSV}\n\n=== MENTORS ===\n${mentorsCSV}\n\n=== COURSES ===\n${coursesCSV}`;
 
-    // Create download
-    const blob = new Blob([allData], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `learnhub_export_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      // Create download
+      const blob = new Blob([allData], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `learnhub_export_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
 
-    toast({
-      title: 'Data Exported',
-      description: 'Platform data has been exported successfully.',
-    });
-
+      toast({
+        title: 'Data Exported',
+        description: 'Platform data has been exported successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to export data',
+        variant: 'destructive',
+      });
+    }
     setIsSaving(false);
   };
 
@@ -189,6 +236,16 @@ export default function AdminSettings() {
         );
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-64" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

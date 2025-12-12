@@ -1,13 +1,64 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowRight, Clock, Users, Star } from 'lucide-react';
-import { courses, getMentorById } from '@/data/mockData';
+import { getAllCourses, getMentorById } from '@/services/api';
+import type { Course, Mentor } from '@/data/mockData';
 
 export function CoursesPreview() {
   const navigate = useNavigate();
-  const featuredCourses = courses.slice(0, 3);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [mentors, setMentors] = useState<Map<string, Mentor>>(new Map());
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const allCourses = await getAllCourses();
+        const featuredCourses = allCourses.slice(0, 3);
+        setCourses(featuredCourses);
+
+        // Load mentors for featured courses
+        const mentorMap = new Map<string, Mentor>();
+        await Promise.all(
+          featuredCourses.map(async (course) => {
+            if (!mentorMap.has(course.mentorId)) {
+              const mentor = await getMentorById(course.mentorId);
+              if (mentor) mentorMap.set(course.mentorId, mentor);
+            }
+          })
+        );
+        setMentors(mentorMap);
+      } catch (error) {
+        console.error('Failed to load courses:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <section className="py-24 bg-muted/30">
+        <div className="container mx-auto px-4">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <Skeleton className="h-6 w-32 mx-auto mb-4" />
+            <Skeleton className="h-10 w-80 mx-auto mb-4" />
+            <Skeleton className="h-6 w-96 mx-auto" />
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-96 rounded-xl" />
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="py-24 bg-muted/30">
@@ -25,8 +76,8 @@ export function CoursesPreview() {
 
         {/* Courses Grid */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {featuredCourses.map((course, index) => {
-            const mentor = getMentorById(course.mentorId);
+          {courses.map((course, index) => {
+            const mentor = mentors.get(course.mentorId);
             return (
               <Card 
                 key={course.id} 

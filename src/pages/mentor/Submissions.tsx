@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -22,21 +23,54 @@ import {
   Clock,
   Loader2,
 } from 'lucide-react';
-import { studentSubmissions, mentorAssignments } from '@/data/mentorMockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { 
+  getPendingSubmissions, 
+  getMentorAssignments, 
+  reviewSubmission,
+} from '@/services/api';
+import type { StudentSubmission, MentorAssignment } from '@/services/api/types';
 import { useToast } from '@/hooks/use-toast';
 
 export default function MentorSubmissions() {
+  const { user } = useAuth();
   const { toast } = useToast();
-  const [selectedSubmission, setSelectedSubmission] = useState<typeof studentSubmissions[0] | null>(null);
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [submissions, setSubmissions] = useState<StudentSubmission[]>([]);
+  const [assignments, setAssignments] = useState<MentorAssignment[]>([]);
+  const [selectedSubmission, setSelectedSubmission] = useState<StudentSubmission | null>(null);
   const [feedback, setFeedback] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const pendingSubmissions = studentSubmissions.filter(s => s.status === 'pending');
-  const approvedSubmissions = studentSubmissions.filter(s => s.status === 'approved');
-  const rejectedSubmissions = studentSubmissions.filter(s => s.status === 'rejected');
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const [submissionsData, assignmentsData] = await Promise.all([
+          getPendingSubmissions(user.id),
+          getMentorAssignments(user.id),
+        ]);
+        // Note: getPendingSubmissions returns all submissions for the mentor, not just pending
+        // We filter them on the frontend for display purposes
+        setSubmissions(submissionsData);
+        setAssignments(assignmentsData);
+      } catch (error) {
+        console.error('Error fetching submissions:', error);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.id]);
+
+  const pendingSubmissions = submissions.filter(s => s.status === 'pending');
+  const approvedSubmissions = submissions.filter(s => s.status === 'approved');
+  const rejectedSubmissions = submissions.filter(s => s.status === 'rejected');
 
   const getAssignmentTitle = (assignmentId: string) => {
-    return mentorAssignments.find(a => a.id === assignmentId)?.title || 'Unknown';
+    return assignments.find(a => a.id === assignmentId)?.title || 'Unknown';
   };
 
   const handleReview = async (action: 'approve' | 'reject') => {
@@ -52,21 +86,41 @@ export default function MentorSubmissions() {
     }
 
     setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    try {
+      const status = action === 'approve' ? 'approved' : 'rejected';
+      await reviewSubmission(selectedSubmission.id, status, feedback || undefined);
+      
+      // Update local state
+      setSubmissions(prev =>
+        prev.map(s =>
+          s.id === selectedSubmission.id
+            ? { ...s, status, feedback: feedback || s.feedback }
+            : s
+        )
+      );
 
-    toast({
-      title: action === 'approve' ? 'Submission Approved' : 'Revision Requested',
-      description: action === 'approve' 
-        ? `${selectedSubmission.studentName}'s submission has been approved.`
-        : `${selectedSubmission.studentName} has been notified to revise their submission.`,
-    });
+      toast({
+        title: action === 'approve' ? 'Submission Approved' : 'Revision Requested',
+        description: action === 'approve' 
+          ? `${selectedSubmission.studentName}'s submission has been approved.`
+          : `${selectedSubmission.studentName} has been notified to revise their submission.`,
+      });
 
-    setIsLoading(false);
-    setSelectedSubmission(null);
-    setFeedback('');
+      setSelectedSubmission(null);
+      setFeedback('');
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to review submission.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const SubmissionCard = ({ submission }: { submission: typeof studentSubmissions[0] }) => (
+  const SubmissionCard = ({ submission }: { submission: StudentSubmission }) => (
     <div
       className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
       onClick={() => {
@@ -102,6 +156,37 @@ export default function MentorSubmissions() {
       </div>
     </div>
   );
+
+  if (isPageLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <div className="grid grid-cols-3 gap-4 max-w-lg">
+          {[...Array(3)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-6 w-6 mx-auto mb-1" />
+                <Skeleton className="h-8 w-12 mx-auto" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-20 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

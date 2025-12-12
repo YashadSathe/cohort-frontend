@@ -1,47 +1,48 @@
+import { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Linkedin } from 'lucide-react';
-
-const mentorData = [
-  {
-    id: 'mentor-1',
-    name: 'Sarah Chen',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&h=150&fit=crop',
-    bio: 'Full-stack developer with 10+ years of experience. Former tech lead at Google and startup founder. Passionate about teaching and helping developers grow.',
-    expertise: ['React', 'Node.js', 'System Design', 'TypeScript'],
-    experience: '10+ years',
-    linkedIn: 'https://linkedin.com/in/sarahchen',
-  },
-  {
-    id: 'mentor-2',
-    name: 'David Kumar',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop',
-    bio: 'Data scientist and ML engineer with expertise in Python, TensorFlow, and MLOps. Previously at Amazon AWS AI team.',
-    expertise: ['Python', 'Machine Learning', 'Data Science', 'TensorFlow'],
-    experience: '8 years',
-    linkedIn: 'https://linkedin.com/in/davidkumar',
-  },
-  {
-    id: 'mentor-3',
-    name: 'Emily Rodriguez',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop',
-    bio: 'Backend specialist with deep expertise in cloud architecture and DevOps. AWS certified solutions architect.',
-    expertise: ['AWS', 'Docker', 'Kubernetes', 'Go'],
-    experience: '7 years',
-    linkedIn: 'https://linkedin.com/in/emilyrodriguez',
-  },
-  {
-    id: 'mentor-4',
-    name: 'Michael Park',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop',
-    bio: 'Senior software architect specializing in distributed systems and microservices. 12+ years building scalable platforms.',
-    expertise: ['Java', 'Microservices', 'System Design', 'Kubernetes'],
-    experience: '12 years',
-    linkedIn: 'https://linkedin.com/in/michaelpark',
-  },
-];
+import { getAllMentors } from '@/services/api';
+import type { Mentor } from '@/data/mockData';
 
 export function MentorsSection() {
+  const [mentors, setMentors] = useState<Mentor[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadMentors = async () => {
+      try {
+        const data = await getAllMentors();
+        setMentors(data.slice(0, 4)); // Show first 4 mentors
+      } catch (error) {
+        console.error('Failed to load mentors:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadMentors();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <section id="mentors" className="py-24">
+        <div className="container mx-auto px-4">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <Skeleton className="h-6 w-32 mx-auto mb-4" />
+            <Skeleton className="h-10 w-80 mx-auto mb-4" />
+            <Skeleton className="h-6 w-96 mx-auto" />
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-72 rounded-xl" />
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section id="mentors" className="py-24">
       <div className="container mx-auto px-4">
@@ -58,7 +59,7 @@ export function MentorsSection() {
 
         {/* Mentors Grid */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {mentorData.map((mentor, index) => (
+          {mentors.map((mentor, index) => (
             <Card 
               key={mentor.id} 
               className="overflow-hidden border-border/50 hover:border-primary/50 transition-all duration-300 hover:shadow-xl animate-fade-up"

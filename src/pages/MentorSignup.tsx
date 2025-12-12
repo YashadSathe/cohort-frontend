@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GraduationCap, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
+import { validateMentorInvite } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
 
 export default function MentorSignup() {
@@ -15,6 +16,8 @@ export default function MentorSignup() {
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isValidating, setIsValidating] = useState(true);
+  const [isValidInvite, setIsValidInvite] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -27,8 +30,28 @@ export default function MentorSignup() {
     linkedIn: '',
   });
 
-  // Check if invite code is valid (mock validation)
-  const isValidInvite = inviteCode && inviteCode.length > 5;
+  useEffect(() => {
+    const validateInvite = async () => {
+      if (!inviteCode) {
+        setIsValidating(false);
+        setIsValidInvite(false);
+        return;
+      }
+
+      try {
+        const result = await validateMentorInvite(inviteCode);
+        setIsValidInvite(result.valid);
+        if (result.valid && result.email) {
+          setFormData(prev => ({ ...prev, email: result.email || '', name: result.name || '' }));
+        }
+      } catch (error) {
+        setIsValidInvite(false);
+      } finally {
+        setIsValidating(false);
+      }
+    };
+    validateInvite();
+  }, [inviteCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +85,7 @@ export default function MentorSignup() {
 
     setIsLoading(true);
 
-    // Simulate API call
+    // TODO: Replace with real API call for mentor registration
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     toast({
@@ -73,6 +96,17 @@ export default function MentorSignup() {
 
     setIsLoading(false);
   };
+
+  if (isValidating) {
+    return (
+      <div className="min-h-screen flex items-center justify-center py-12 px-4 bg-gradient-to-br from-secondary via-background to-background">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Validating invitation...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!isValidInvite) {
     return (

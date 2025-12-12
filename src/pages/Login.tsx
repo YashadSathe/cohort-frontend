@@ -6,14 +6,13 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GraduationCap, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
+import { useAuthWithLoading } from '@/hooks/useAuthWithLoading';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, isAuthenticated } = useAuth();
-  const { toast } = useToast();
+  const { isAuthenticated } = useAuth();
+  const { login, isLoggingIn } = useAuthWithLoading();
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -22,11 +21,11 @@ export default function Login() {
   // Check if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-
+      // Check for enrollment intent
       const intentStr = localStorage.getItem('enrollmentIntent');
       if (intentStr) {
         const intent = JSON.parse(intentStr);
-
+        // Check if intent is recent (within 1 hour)
         if (Date.now() - intent.timestamp < 3600000) {
           localStorage.removeItem('enrollmentIntent');
           navigate(`/courses/${intent.courseSlug}`);
@@ -40,21 +39,15 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
 
-    const success = await login(formData.email, formData.password);
+    const success = await login(formData.email, formData.password, 'student');
 
     if (success) {
-      toast({
-        title: 'Welcome back!',
-        description: 'You have successfully logged in.',
-      });
-      
-
+      // Check for enrollment intent
       const intentStr = localStorage.getItem('enrollmentIntent');
       if (intentStr) {
         const intent = JSON.parse(intentStr);
-
+        // Check if intent is recent (within 1 hour)
         if (Date.now() - intent.timestamp < 3600000) {
           localStorage.removeItem('enrollmentIntent');
           navigate(`/courses/${intent.courseSlug}`);
@@ -64,15 +57,7 @@ export default function Login() {
       }
       
       navigate('/student/dashboard');
-    } else {
-      toast({
-        title: 'Login failed',
-        description: 'Invalid email or password.',
-        variant: 'destructive',
-      });
     }
-
-    setIsLoading(false);
   };
 
   return (
@@ -134,8 +119,8 @@ export default function Login() {
                 </Link>
               </div>
 
-              <Button type="submit" className="w-full gradient-primary border-0" disabled={isLoading}>
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              <Button type="submit" className="w-full gradient-primary border-0" disabled={isLoggingIn}>
+                {isLoggingIn ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 Sign In
               </Button>
             </form>

@@ -1,33 +1,44 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   Clock, Users, Star, Calendar, CheckCircle2, Play, FileText, Award, 
   ArrowLeft, Linkedin, BookOpen, Target, UserCheck, ListChecks
 } from 'lucide-react';
-import { getCourseBySlug, getMentorById } from '@/data/mockData';
+import { getCourseBySlug, getMentorById } from '@/services/api';
 import { PaymentModal } from '@/components/payment/PaymentModal';
+import type { Course, Mentor } from '@/data/mockData';
 
 export default function CourseDetails() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const course = getCourseBySlug(slug || '');
-  const mentor = course ? getMentorById(course.mentorId) : null;
+  const [course, setCourse] = useState<Course | null>(null);
+  const [mentor, setMentor] = useState<Mentor | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
 
-  if (!course) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Course not found</h1>
-          <Button onClick={() => navigate('/courses')}>Back to Courses</Button>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const courseData = await getCourseBySlug(slug || '');
+        setCourse(courseData);
+
+        if (courseData) {
+          const mentorData = await getMentorById(courseData.mentorId);
+          setMentor(mentorData);
+        }
+      } catch (error) {
+        console.error('Failed to load course:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, [slug]);
 
   // Course overview data (mock - would come from API in real app)
   const courseOverview = {
@@ -52,6 +63,39 @@ export default function CourseDetails() {
       'No prior programming experience required',
     ],
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen">
+        <section className="py-16 bg-gradient-to-br from-secondary via-background to-background">
+          <div className="container mx-auto px-4">
+            <Skeleton className="h-10 w-32 mb-6" />
+            <div className="grid lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-6">
+                <Skeleton className="h-8 w-48" />
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-24 w-full" />
+              </div>
+              <div className="lg:col-span-1">
+                <Skeleton className="h-96 w-full rounded-xl" />
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (!course) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Course not found</h1>
+          <Button onClick={() => navigate('/courses')}>Back to Courses</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">

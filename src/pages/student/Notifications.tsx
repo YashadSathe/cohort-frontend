@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,17 +11,42 @@ import {
   Award,
   CheckCheck,
   Circle,
+  Loader2,
 } from 'lucide-react';
-import { notifications } from '@/data/studentMockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { getNotifications, markNotificationRead, markAllNotificationsRead } from '@/services/api';
+import type { Notification } from '@/services/api';
 
 export default function Notifications() {
   const navigate = useNavigate();
-  const [notificationList, setNotificationList] = useState(notifications);
+  const { user } = useAuth();
+  const [notificationList, setNotificationList] = useState<Notification[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadNotifications = async () => {
+      if (user?.id) {
+        try {
+          const data = await getNotifications(user.id);
+          setNotificationList(data);
+        } catch (error) {
+          console.error('Failed to load notifications:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadNotifications();
+  }, [user?.id]);
 
   const unreadCount = notificationList.filter(n => !n.read).length;
 
-  const markAllAsRead = () => {
-    setNotificationList(prev => prev.map(n => ({ ...n, read: true })));
+  const markAllAsRead = async () => {
+    if (user?.id) {
+      await markAllNotificationsRead(user.id);
+      setNotificationList(prev => prev.map(n => ({ ...n, read: true })));
+    }
   };
 
   const getIcon = (type: string) => {
@@ -56,8 +81,9 @@ export default function Notifications() {
     }
   };
 
-  const handleNotificationClick = (notification: typeof notifications[0]) => {
+  const handleNotificationClick = async (notification: Notification) => {
     // Mark as read
+    await markNotificationRead(notification.id);
     setNotificationList(prev =>
       prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
     );
@@ -67,6 +93,14 @@ export default function Notifications() {
       navigate(notification.link);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-3xl">

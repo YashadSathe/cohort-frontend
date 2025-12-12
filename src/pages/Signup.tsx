@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,23 +7,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { GraduationCap, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAuthWithLoading } from '@/hooks/useAuthWithLoading';
 import { useToast } from '@/hooks/use-toast';
 
 const countries = ['USA', 'Canada', 'UK', 'India', 'Australia', 'Germany', 'Other'];
 
 export default function Signup() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams()
-
-  // detect invite code
-  const inviteCode = searchParams.get('invite');
-  const isMentorSignup = !!inviteCode;
-
-  const { register, isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth();
+  const { register, isRegistering } = useAuthWithLoading();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -33,21 +27,27 @@ export default function Signup() {
     city: '',
     state: '',
     country: '',
-    // student specific
     college: '',
-    // mentor specific
-    bio: '',
-    expertise: '',
-    experience: '',
-    inviteCode: inviteCode || '',
   });
 
-  // Check authentication
+  // Check if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      navigate(isMentorSignup ? '/mentor/dashboard' : '/student/dashboard');
+      // Check for enrollment intent
+      const intentStr = localStorage.getItem('enrollmentIntent');
+      if (intentStr) {
+        const intent = JSON.parse(intentStr);
+        // Check if intent is recent (within 1 hour)
+        if (Date.now() - intent.timestamp < 3600000) {
+          localStorage.removeItem('enrollmentIntent');
+          navigate(`/courses/${intent.courseSlug}`);
+          return;
+        }
+        localStorage.removeItem('enrollmentIntent');
+      }
+      navigate('/student/dashboard');
     }
-  }, [isAuthenticated, navigate, isMentorSignup]);
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,26 +70,24 @@ export default function Signup() {
       return;
     }
 
-    setIsLoading(true);
-
     const success = await register(formData);
 
     if (success) {
-      toast({
-        title: isMentorSignup ? 'Mentor Account Created!' : 'Welcome to LearnHub!',
-        description: isMentorSignup 
-          ? 'Your mentor profile is ready.' 
-          : 'Start exploring courses now!',
-      });
-      navigate(isMentorSignup ? '/mentor/dashboard' : '/student/dashboard');
-    } else {
-      toast({
-        title: 'Registration failed',
-        description: isMentorSignup ? 'Invalid invite code or email taken.' : 'Registration failed.',
-        variant: 'destructive',
-      });
+      // Check for enrollment intent
+      const intentStr = localStorage.getItem('enrollmentIntent');
+      if (intentStr) {
+        const intent = JSON.parse(intentStr);
+        // Check if intent is recent (within 1 hour)
+        if (Date.now() - intent.timestamp < 3600000) {
+          localStorage.removeItem('enrollmentIntent');
+          navigate(`/courses/${intent.courseSlug}`);
+          return;
+        }
+        localStorage.removeItem('enrollmentIntent');
+      }
+      
+      navigate('/student/dashboard');
     }
-    setIsLoading(false);
   };
 
   return (
@@ -235,8 +233,8 @@ export default function Signup() {
                 />
               </div>
 
-              <Button type="submit" className="w-full gradient-primary border-0" disabled={isLoading}>
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              <Button type="submit" className="w-full gradient-primary border-0" disabled={isRegistering}>
+                {isRegistering ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                 Create Account
               </Button>
 

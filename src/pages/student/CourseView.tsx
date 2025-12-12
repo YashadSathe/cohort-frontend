@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,17 +19,58 @@ import {
   Play,
   ExternalLink,
   Lock,
+  Loader2,
 } from 'lucide-react';
-import { getCourseById, getMentorById } from '@/data/mockData';
-import { getProgressByCourse, getAssignmentsByCourse } from '@/data/studentMockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { getCourseById, getMentorById, getCourseProgress, getStudentAssignments } from '@/services/api';
+import type { Course, Mentor, StudentProgress, Assignment } from '@/services/api';
 
 export default function CourseView() {
   const { courseId } = useParams();
   const navigate = useNavigate();
-  const course = getCourseById(courseId || '');
-  const mentor = course ? getMentorById(course.mentorId) : null;
-  const progress = course ? getProgressByCourse(course.id) : null;
-  const assignments = course ? getAssignmentsByCourse(course.id) : [];
+  const { user } = useAuth();
+  const [course, setCourse] = useState<Course | null>(null);
+  const [mentor, setMentor] = useState<Mentor | null>(null);
+  const [progress, setProgress] = useState<StudentProgress | null>(null);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (courseId && user?.id) {
+        try {
+          const courseData = await getCourseById(courseId);
+          setCourse(courseData);
+
+          if (courseData) {
+            const [mentorData, progressData, allAssignments] = await Promise.all([
+              getMentorById(courseData.mentorId),
+              getCourseProgress(user.id, courseId),
+              getStudentAssignments(user.id),
+            ]);
+            
+            setMentor(mentorData);
+            setProgress(progressData);
+            setAssignments(allAssignments.filter(a => a.courseId === courseId));
+          }
+        } catch (error) {
+          console.error('Failed to load course:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadData();
+  }, [courseId, user?.id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (!course) {
     return (

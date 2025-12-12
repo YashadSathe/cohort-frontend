@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   BarChart3,
   Users,
@@ -11,40 +13,101 @@ import {
   Award,
   Download,
   TrendingUp,
-  TrendingDown,
 } from 'lucide-react';
-import { cohortStudents, mentorAssignments, mentorSessions, studentSubmissions } from '@/data/mentorMockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { 
+  getCohortStudents, 
+  getMentorAssignments, 
+  getMentorSessions, 
+  getPendingSubmissions 
+} from '@/services/api';
+import type { CohortStudent, MentorAssignment, MentorSession, StudentSubmission } from '@/services/api/types';
 
 export default function MentorReports() {
+  const { user } = useAuth();
+  const [isLoading, setIsLoading] = useState(true);
+  const [students, setStudents] = useState<CohortStudent[]>([]);
+  const [assignments, setAssignments] = useState<MentorAssignment[]>([]);
+  const [sessions, setSessions] = useState<MentorSession[]>([]);
+  const [submissions, setSubmissions] = useState<StudentSubmission[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const [studentsData, assignmentsData, sessionsData, submissionsData] = await Promise.all([
+          getCohortStudents(user.id),
+          getMentorAssignments(user.id),
+          getMentorSessions(user.id),
+          getPendingSubmissions(user.id),
+        ]);
+        setStudents(studentsData);
+        setAssignments(assignmentsData);
+        setSessions(sessionsData);
+        setSubmissions(submissionsData);
+      } catch (error) {
+        console.error('Error fetching reports data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.id]);
+
   // Calculate stats
-  const totalStudents = cohortStudents.length;
-  const avgProgress = Math.round(
-    cohortStudents.reduce((acc, s) => acc + s.progress, 0) / totalStudents
-  );
-  const activeStudents = cohortStudents.filter(s => {
+  const totalStudents = students.length;
+  const avgProgress = totalStudents > 0
+    ? Math.round(students.reduce((acc, s) => acc + s.progress, 0) / totalStudents)
+    : 0;
+  const activeStudents = students.filter(s => {
     const lastActive = new Date(s.lastActive);
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     return lastActive >= weekAgo;
   }).length;
   
-  const completedSessions = mentorSessions.filter(s => s.status === 'completed').length;
-  const totalSessions = mentorSessions.length;
+  const completedSessions = sessions.filter(s => s.status === 'completed').length;
+  const totalSessions = sessions.length;
   
-  const totalSubmissions = studentSubmissions.length;
-  const approvedSubmissions = studentSubmissions.filter(s => s.status === 'approved').length;
-  const pendingSubmissions = studentSubmissions.filter(s => s.status === 'pending').length;
+  const totalSubmissions = submissions.length;
+  const approvedSubmissions = submissions.filter(s => s.status === 'approved').length;
+  const pendingSubmissions = submissions.filter(s => s.status === 'pending').length;
   
-  const certifiedStudents = cohortStudents.filter(s => s.certificateStatus === 'issued').length;
-  const eligibleStudents = cohortStudents.filter(s => s.certificateStatus === 'eligible').length;
+  const certifiedStudents = students.filter(s => s.certificateStatus === 'issued').length;
+  const eligibleStudents = students.filter(s => s.certificateStatus === 'eligible').length;
 
   // Progress distribution
   const progressDistribution = [
-    { range: '0-25%', count: cohortStudents.filter(s => s.progress <= 25).length },
-    { range: '26-50%', count: cohortStudents.filter(s => s.progress > 25 && s.progress <= 50).length },
-    { range: '51-75%', count: cohortStudents.filter(s => s.progress > 50 && s.progress <= 75).length },
-    { range: '76-100%', count: cohortStudents.filter(s => s.progress > 75).length },
+    { range: '0-25%', count: students.filter(s => s.progress <= 25).length },
+    { range: '26-50%', count: students.filter(s => s.progress > 25 && s.progress <= 50).length },
+    { range: '51-75%', count: students.filter(s => s.progress > 50 && s.progress <= 75).length },
+    { range: '76-100%', count: students.filter(s => s.progress > 75).length },
   ];
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <Skeleton className="h-8 w-32 mb-2" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-16 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -90,7 +153,7 @@ export default function MentorReports() {
               </div>
             </div>
             <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
-              <span>{Math.round((activeStudents / totalStudents) * 100)}% active rate</span>
+              <span>{totalStudents > 0 ? Math.round((activeStudents / totalStudents) * 100) : 0}% active rate</span>
             </div>
           </CardContent>
         </Card>
@@ -143,7 +206,7 @@ export default function MentorReports() {
                   <span>{item.range}</span>
                   <span className="font-medium">{item.count} students</span>
                 </div>
-                <Progress value={(item.count / totalStudents) * 100} className="h-2" />
+                <Progress value={totalStudents > 0 ? (item.count / totalStudents) * 100 : 0} className="h-2" />
               </div>
             ))}
           </CardContent>
@@ -160,7 +223,7 @@ export default function MentorReports() {
                 <FileText className="w-5 h-5 text-muted-foreground" />
                 <span>Total Assignments</span>
               </div>
-              <Badge variant="secondary">{mentorAssignments.length}</Badge>
+              <Badge variant="secondary">{assignments.length}</Badge>
             </div>
             
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
@@ -198,7 +261,7 @@ export default function MentorReports() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {[...cohortStudents]
+              {[...students]
                 .sort((a, b) => b.progress - a.progress)
                 .slice(0, 5)
                 .map((student, index) => (
@@ -230,8 +293,10 @@ export default function MentorReports() {
             <CardTitle>Class Attendance</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {cohortStudents.slice(0, 5).map((student) => {
-              const attendanceRate = Math.round((student.attendedClasses / student.totalClasses) * 100);
+            {students.slice(0, 5).map((student) => {
+              const attendanceRate = student.totalClasses > 0 
+                ? Math.round((student.attendedClasses / student.totalClasses) * 100)
+                : 0;
               return (
                 <div key={student.id} className="space-y-2">
                   <div className="flex items-center justify-between text-sm">

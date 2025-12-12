@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -16,18 +17,29 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { FileText, Calendar, Plus, Loader2, Eye, Users, Edit2 } from 'lucide-react';
-import { mentorAssignments, getSubmissionsByAssignment, MentorAssignment } from '@/data/mentorMockData';
-import { courses } from '@/data/mockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { 
+  getMentorAssignments, 
+  getMentorCourses, 
+  createAssignment, 
+  updateAssignment,
+  getAssignmentSubmissions,
+} from '@/services/api';
+import type { MentorAssignment, Course, StudentSubmission } from '@/services/api/types';
 import { useToast } from '@/hooks/use-toast';
 
 export default function MentorAssignments() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [assignments, setAssignments] = useState(mentorAssignments);
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [assignments, setAssignments] = useState<MentorAssignment[]>([]);
+  const [assignedCourses, setAssignedCourses] = useState<Course[]>([]);
+  const [submissionCounts, setSubmissionCounts] = useState<Record<string, { total: number; pending: number }>>({});
   const [viewingAssignment, setViewingAssignment] = useState<MentorAssignment | null>(null);
   const [editingAssignment, setEditingAssignment] = useState<MentorAssignment | null>(null);
   const [formData, setFormData] = useState({
@@ -39,7 +51,42 @@ export default function MentorAssignments() {
     status: 'draft' as 'draft' | 'published',
   });
 
-  const assignedCourses = courses.filter(c => c.mentorId === 'mentor-1');
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const [assignmentsData, coursesData] = await Promise.all([
+          getMentorAssignments(user.id),
+          getMentorCourses(user.id),
+        ]);
+        setAssignments(assignmentsData);
+        setAssignedCourses(coursesData);
+
+        // Fetch submission counts for each published assignment
+        const counts: Record<string, { total: number; pending: number }> = {};
+        await Promise.all(
+          assignmentsData
+            .filter(a => a.status === 'published')
+            .map(async (assignment) => {
+              const submissions = await getAssignmentSubmissions(assignment.id);
+              counts[assignment.id] = {
+                total: submissions.length,
+                pending: submissions.filter(s => s.status === 'pending').length,
+              };
+            })
+        );
+        setSubmissionCounts(counts);
+      } catch (error) {
+        console.error('Error fetching assignments:', error);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.id]);
+
   const publishedAssignments = assignments.filter(a => a.status === 'published');
   const draftAssignments = assignments.filter(a => a.status === 'draft');
 
@@ -58,31 +105,36 @@ export default function MentorAssignments() {
     e.preventDefault();
     setIsLoading(true);
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const newAssignment = await createAssignment({
+        courseId: formData.courseId,
+        title: formData.title,
+        description: formData.description,
+        instructions: formData.instructions,
+        dueDate: formData.dueDate,
+        status: formData.status,
+      });
 
-    const newAssignment: MentorAssignment = {
-      id: `assign-${Date.now()}`,
-      courseId: formData.courseId,
-      title: formData.title,
-      description: formData.description,
-      instructions: formData.instructions,
-      dueDate: formData.dueDate,
-      status: formData.status,
-      createdAt: new Date().toISOString(),
-    };
+      setAssignments(prev => [...prev, newAssignment]);
 
-    setAssignments(prev => [...prev, newAssignment]);
+      toast({
+        title: formData.status === 'published' ? 'Assignment Published' : 'Draft Saved',
+        description: formData.status === 'published' 
+          ? 'Students can now see this assignment.' 
+          : 'Your assignment has been saved as draft.',
+      });
 
-    toast({
-      title: formData.status === 'published' ? 'Assignment Published' : 'Draft Saved',
-      description: formData.status === 'published' 
-        ? 'Students can now see this assignment.' 
-        : 'Your assignment has been saved as draft.',
-    });
-
-    setIsLoading(false);
-    setIsOpen(false);
-    resetForm();
+      setIsOpen(false);
+      resetForm();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to create assignment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleViewAssignment = (assignment: MentorAssignment) => {
@@ -105,50 +157,87 @@ export default function MentorAssignments() {
 
   const handleUpdateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editingAssignment) return;
+    
     setIsLoading(true);
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const updated = await updateAssignment(editingAssignment.id, {
+        title: formData.title,
+        description: formData.description,
+        instructions: formData.instructions,
+        dueDate: formData.dueDate,
+        status: formData.status,
+      });
 
-    if (editingAssignment) {
       setAssignments(prev =>
-        prev.map(a =>
-          a.id === editingAssignment.id
-            ? {
-                ...a,
-                title: formData.title,
-                description: formData.description,
-                instructions: formData.instructions,
-                dueDate: formData.dueDate,
-                status: formData.status,
-              }
-            : a
-        )
+        prev.map(a => a.id === editingAssignment.id ? updated : a)
       );
+
+      toast({
+        title: 'Assignment Updated',
+        description: 'Your assignment has been updated successfully.',
+      });
+
+      setIsEditOpen(false);
+      setEditingAssignment(null);
+      resetForm();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update assignment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
-
-    toast({
-      title: 'Assignment Updated',
-      description: 'Your assignment has been updated successfully.',
-    });
-
-    setIsLoading(false);
-    setIsEditOpen(false);
-    setEditingAssignment(null);
-    resetForm();
   };
 
   const handlePublishDraft = async (assignmentId: string) => {
-    setAssignments(prev =>
-      prev.map(a =>
-        a.id === assignmentId ? { ...a, status: 'published' as const } : a
-      )
-    );
+    try {
+      await updateAssignment(assignmentId, { status: 'published' });
+      setAssignments(prev =>
+        prev.map(a =>
+          a.id === assignmentId ? { ...a, status: 'published' as const } : a
+        )
+      );
 
-    toast({
-      title: 'Assignment Published',
-      description: 'Students can now see this assignment.',
-    });
+      toast({
+        title: 'Assignment Published',
+        description: 'Students can now see this assignment.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to publish assignment.',
+        variant: 'destructive',
+      });
+    }
   };
+
+  if (isPageLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-40" />
+        </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-24 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -367,8 +456,7 @@ export default function MentorAssignments() {
           ) : (
             <div className="space-y-3">
               {publishedAssignments.map((assignment) => {
-                const submissions = getSubmissionsByAssignment(assignment.id);
-                const pendingCount = submissions.filter(s => s.status === 'pending').length;
+                const counts = submissionCounts[assignment.id] || { total: 0, pending: 0 };
                 
                 return (
                   <div
@@ -389,11 +477,11 @@ export default function MentorAssignments() {
                           </span>
                           <span className="flex items-center gap-1 text-muted-foreground">
                             <Users className="w-4 h-4" />
-                            {submissions.length} submissions
+                            {counts.total} submissions
                           </span>
-                          {pendingCount > 0 && (
+                          {counts.pending > 0 && (
                             <Badge variant="secondary" className="bg-warning/10 text-warning">
-                              {pendingCount} pending review
+                              {counts.pending} pending review
                             </Badge>
                           )}
                         </div>

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -11,44 +12,142 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Award, CheckCircle2, Lock, Loader2, Users } from 'lucide-react';
-import { cohortStudents } from '@/data/mentorMockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { getCohortStudents, issueCertificate } from '@/services/api';
+import type { CohortStudent } from '@/services/api/types';
 import { useToast } from '@/hooks/use-toast';
 
 export default function MentorCertificates() {
+  const { user } = useAuth();
   const { toast } = useToast();
-  const [selectedStudent, setSelectedStudent] = useState<typeof cohortStudents[0] | null>(null);
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [students, setStudents] = useState<CohortStudent[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<CohortStudent | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const eligibleStudents = cohortStudents.filter(s => s.certificateStatus === 'eligible');
-  const issuedStudents = cohortStudents.filter(s => s.certificateStatus === 'issued');
-  const lockedStudents = cohortStudents.filter(s => s.certificateStatus === 'locked');
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const studentsData = await getCohortStudents(user.id);
+        setStudents(studentsData);
+      } catch (error) {
+        console.error('Error fetching students:', error);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.id]);
+
+  const eligibleStudents = students.filter(s => s.certificateStatus === 'eligible');
+  const issuedStudents = students.filter(s => s.certificateStatus === 'issued');
+  const lockedStudents = students.filter(s => s.certificateStatus === 'locked');
 
   const handleIssueCertificate = async () => {
     if (!selectedStudent) return;
     
     setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    try {
+      await issueCertificate(selectedStudent.id, selectedStudent.courseId);
+      
+      // Update local state
+      setStudents(prev =>
+        prev.map(s =>
+          s.id === selectedStudent.id
+            ? { ...s, certificateStatus: 'issued' as const }
+            : s
+        )
+      );
 
-    toast({
-      title: 'Certificate Issued',
-      description: `${selectedStudent.name} has been issued their certificate.`,
-    });
+      toast({
+        title: 'Certificate Issued',
+        description: `${selectedStudent.name} has been issued their certificate.`,
+      });
 
-    setIsLoading(false);
-    setSelectedStudent(null);
+      setSelectedStudent(null);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to issue certificate.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleIssueAll = async () => {
     setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    try {
+      // Issue certificates to all eligible students
+      await Promise.all(
+        eligibleStudents.map(student =>
+          issueCertificate(student.id, student.courseId)
+        )
+      );
 
-    toast({
-      title: 'Certificates Issued',
-      description: `${eligibleStudents.length} certificates have been issued.`,
-    });
+      // Update local state
+      setStudents(prev =>
+        prev.map(s =>
+          s.certificateStatus === 'eligible'
+            ? { ...s, certificateStatus: 'issued' as const }
+            : s
+        )
+      );
 
-    setIsLoading(false);
+      toast({
+        title: 'Certificates Issued',
+        description: `${eligibleStudents.length} certificates have been issued.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to issue some certificates.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  if (isPageLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-80" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="grid grid-cols-3 gap-4 max-w-lg">
+          {[...Array(3)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-6 w-6 mx-auto mb-1" />
+                <Skeleton className="h-8 w-12 mx-auto" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-20 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

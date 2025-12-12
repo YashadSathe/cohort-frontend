@@ -1,12 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Search, Clock, Users, Star, ArrowRight, Filter } from 'lucide-react';
-import { courses, getMentorById } from '@/data/mockData';
+import { getAllCourses, getMentorById } from '@/services/api';
+import type { Course, Mentor } from '@/data/mockData';
 
 const categories = ['All', 'Web Development', 'Data Science', 'Cloud Computing', 'System Design'];
 const levels = ['All', 'Beginner', 'Intermediate', 'Advanced'];
@@ -17,6 +19,34 @@ export default function Courses() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedLevel, setSelectedLevel] = useState('All');
   const [sortBy, setSortBy] = useState('popular');
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [mentors, setMentors] = useState<Map<string, Mentor>>(new Map());
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const allCourses = await getAllCourses();
+        setCourses(allCourses);
+
+        // Load mentors for all courses
+        const mentorMap = new Map<string, Mentor>();
+        const uniqueMentorIds = [...new Set(allCourses.map(c => c.mentorId))];
+        await Promise.all(
+          uniqueMentorIds.map(async (mentorId) => {
+            const mentor = await getMentorById(mentorId);
+            if (mentor) mentorMap.set(mentorId, mentor);
+          })
+        );
+        setMentors(mentorMap);
+      } catch (error) {
+        console.error('Failed to load courses:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const filteredCourses = useMemo(() => {
     let result = courses.filter(course => {
@@ -44,7 +74,31 @@ export default function Courses() {
     }
 
     return result;
-  }, [searchQuery, selectedCategory, selectedLevel, sortBy]);
+  }, [courses, searchQuery, selectedCategory, selectedLevel, sortBy]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen">
+        <section className="py-16 bg-gradient-to-br from-secondary via-background to-background">
+          <div className="container mx-auto px-4">
+            <div className="max-w-2xl mx-auto text-center">
+              <Skeleton className="h-12 w-80 mx-auto mb-4" />
+              <Skeleton className="h-6 w-96 mx-auto" />
+            </div>
+          </div>
+        </section>
+        <section className="py-12">
+          <div className="container mx-auto px-4">
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {[...Array(6)].map((_, i) => (
+                <Skeleton key={i} className="h-96 rounded-xl" />
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -148,7 +202,7 @@ export default function Courses() {
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
               {filteredCourses.map((course, index) => {
-                const mentor = getMentorById(course.mentorId);
+                const mentor = mentors.get(course.mentorId);
                 return (
                   <Card 
                     key={course.id} 

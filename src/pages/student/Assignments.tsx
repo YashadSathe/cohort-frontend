@@ -1,13 +1,43 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Calendar, CheckCircle2, XCircle, Clock, AlertCircle } from 'lucide-react';
-import { assignments } from '@/data/studentMockData';
-import { getCourseById } from '@/data/mockData';
+import { FileText, Calendar, CheckCircle2, XCircle, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { getStudentAssignments, getCourseById } from '@/services/api';
+import type { Assignment, Course } from '@/services/api';
 
 export default function Assignments() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadAssignments = async () => {
+      if (user?.id) {
+        try {
+          const data = await getStudentAssignments(user.id);
+          setAssignments(data);
+        } catch (error) {
+          console.error('Failed to load assignments:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadAssignments();
+  }, [user?.id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   const pendingAssignments = assignments.filter(a => a.status === 'not-submitted');
   const submittedAssignments = assignments.filter(a => a.status === 'submitted');
@@ -46,8 +76,16 @@ export default function Assignments() {
     }
   };
 
-  const AssignmentCard = ({ assignment }: { assignment: typeof assignments[0] }) => {
-    const course = getCourseById(assignment.courseId);
+  const AssignmentCard = ({ assignment }: { assignment: Assignment }) => {
+    const [course, setCourse] = useState<Course | null>(null);
+
+    useEffect(() => {
+      const loadCourse = async () => {
+        const c = await getCourseById(assignment.courseId);
+        setCourse(c);
+      };
+      loadCourse();
+    }, [assignment.courseId]);
     
     return (
       <div

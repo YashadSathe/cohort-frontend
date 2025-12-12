@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -27,7 +27,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
-import { getUnreadNotificationsCount } from '@/data/studentMockData';
+import { getUnreadNotificationsCount } from '@/services/api';
+import { ErrorBoundary } from '@/components/ui/error-boundary';
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/student/dashboard' },
@@ -42,7 +43,17 @@ export function StudentLayout() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const unreadCount = getUnreadNotificationsCount();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const loadUnreadCount = async () => {
+      if (user?.id) {
+        const count = await getUnreadNotificationsCount(user.id);
+        setUnreadCount(count);
+      }
+    };
+    loadUnreadCount();
+  }, [user?.id]);
 
   const handleLogout = () => {
     logout();
@@ -188,7 +199,9 @@ export function StudentLayout() {
       {/* Main Content */}
       <main className="pt-16 lg:pl-64 min-h-screen">
         <div className="p-4 md:p-6 lg:p-8">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </div>
       </main>
     </div>

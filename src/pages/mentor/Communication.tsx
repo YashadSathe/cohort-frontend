@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,12 +7,18 @@ import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Mail, Users, User, Loader2, Send } from 'lucide-react';
-import { cohortStudents } from '@/data/mentorMockData';
+import { useAuth } from '@/contexts/AuthContext';
+import { getCohortStudents } from '@/services/api';
+import type { CohortStudent } from '@/services/api/types';
 import { useToast } from '@/hooks/use-toast';
 
 export default function MentorCommunication() {
+  const { user } = useAuth();
   const { toast } = useToast();
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [students, setStudents] = useState<CohortStudent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [recipientType, setRecipientType] = useState<'all' | 'selected'>('all');
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
@@ -20,6 +26,23 @@ export default function MentorCommunication() {
     subject: '',
     message: '',
   });
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const studentsData = await getCohortStudents(user.id);
+        setStudents(studentsData);
+      } catch (error) {
+        console.error('Error fetching students:', error);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.id]);
 
   const handleStudentToggle = (studentId: string) => {
     setSelectedStudents(prev =>
@@ -30,10 +53,10 @@ export default function MentorCommunication() {
   };
 
   const handleSelectAll = () => {
-    if (selectedStudents.length === cohortStudents.length) {
+    if (selectedStudents.length === students.length) {
       setSelectedStudents([]);
     } else {
-      setSelectedStudents(cohortStudents.map(s => s.id));
+      setSelectedStudents(students.map(s => s.id));
     }
   };
 
@@ -59,9 +82,11 @@ export default function MentorCommunication() {
     }
 
     setIsLoading(true);
+    
+    // TODO: Replace with real API call
     await new Promise(resolve => setTimeout(resolve, 1500));
 
-    const recipientCount = recipientType === 'all' ? cohortStudents.length : selectedStudents.length;
+    const recipientCount = recipientType === 'all' ? students.length : selectedStudents.length;
 
     toast({
       title: 'Email Sent',
@@ -72,6 +97,39 @@ export default function MentorCommunication() {
     setFormData({ subject: '', message: '' });
     setSelectedStudents([]);
   };
+
+  if (isPageLoading) {
+    return (
+      <div className="space-y-6 max-w-4xl">
+        <div>
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-6 w-32" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-32 w-full" />
+              </CardContent>
+            </Card>
+          </div>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-32" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-48 w-full" />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -103,7 +161,7 @@ export default function MentorCommunication() {
                       <RadioGroupItem value="all" id="all" />
                       <label htmlFor="all" className="flex items-center gap-2 cursor-pointer">
                         <Users className="w-4 h-4" />
-                        All Students ({cohortStudents.length})
+                        All Students ({students.length})
                       </label>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -163,12 +221,12 @@ export default function MentorCommunication() {
                   onClick={handleSelectAll}
                   disabled={recipientType === 'all'}
                 >
-                  {selectedStudents.length === cohortStudents.length ? 'Deselect All' : 'Select All'}
+                  {selectedStudents.length === students.length ? 'Deselect All' : 'Select All'}
                 </Button>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {cohortStudents.map((student) => (
+                  {students.map((student) => (
                     <div
                       key={student.id}
                       className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${

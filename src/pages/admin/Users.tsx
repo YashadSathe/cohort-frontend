@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -30,15 +31,18 @@ import {
   Shield,
   Loader2,
 } from 'lucide-react';
-import { students as initialStudents, mentors as initialMentors, admins, Student, Mentor } from '@/data/mockData';
+import { getAllStudents, getAllMentors as getAdminMentors, updateStudent, updateMentor } from '@/services/api';
+import { admins } from '@/data/mockData';
+import type { Student, Mentor } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
 
 export default function AdminUsers() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTab, setSelectedTab] = useState('students');
-  const [students, setStudents] = useState(initialStudents);
-  const [mentorsData, setMentorsData] = useState(initialMentors);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [mentorsData, setMentorsData] = useState<Mentor[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Modal states
   const [isEmailOpen, setIsEmailOpen] = useState(false);
@@ -46,7 +50,30 @@ export default function AdminUsers() {
   const [selectedUser, setSelectedUser] = useState<Student | Mentor | null>(null);
   const [emailForm, setEmailForm] = useState({ subject: '', message: '' });
   const [suspendReason, setSuspendReason] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [studentsData, mentors] = await Promise.all([
+          getAllStudents(),
+          getAdminMentors(),
+        ]);
+        setStudents(studentsData);
+        setMentorsData(mentors);
+      } catch (error) {
+        console.error('Failed to load users:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load users',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
+  }, [toast]);
 
   const filteredStudents = students.filter(
     (s) =>
@@ -80,7 +107,9 @@ export default function AdminUsers() {
 
   const handleSubmitEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    setIsSubmitting(true);
+    
+    // TODO: Replace with real API call for sending emails
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     toast({
@@ -88,45 +117,56 @@ export default function AdminUsers() {
       description: `Email has been sent to ${selectedUser?.name}.`,
     });
     
-    setIsLoading(false);
+    setIsSubmitting(false);
     setIsEmailOpen(false);
     setSelectedUser(null);
   };
 
   const handleConfirmSuspend = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    setIsSubmitting(true);
 
-    if (selectedUser && 'enrolledCourses' in selectedUser) {
-      // It's a student
-      setStudents(prev =>
-        prev.map(s =>
-          s.id === selectedUser.id
-            ? { ...s, status: 'inactive' as const, enrolledCourses: [] }
-            : s
-        )
-      );
-    } else if (selectedUser) {
-      // It's a mentor
-      setMentorsData(prev =>
-        prev.map(m =>
-          m.id === selectedUser.id
-            ? { ...m, status: 'inactive' as const }
-            : m
-        )
-      );
+    try {
+      if (selectedUser && 'enrolledCourses' in selectedUser) {
+        // It's a student
+        const updated = await updateStudent(selectedUser.id, { status: 'inactive' as const, enrolledCourses: [] });
+        setStudents(prev => prev.map(s => s.id === selectedUser.id ? updated : s));
+      } else if (selectedUser) {
+        // It's a mentor
+        const updated = await updateMentor(selectedUser.id, { status: 'inactive' as const });
+        setMentorsData(prev => prev.map(m => m.id === selectedUser.id ? updated : m));
+      }
+      
+      toast({
+        title: 'User Suspended',
+        description: `${selectedUser?.name} has been suspended.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to suspend user',
+        variant: 'destructive',
+      });
     }
     
-    toast({
-      title: 'User Suspended',
-      description: `${selectedUser?.name} has been suspended.`,
-    });
-    
-    setIsLoading(false);
+    setIsSubmitting(false);
     setIsSuspendOpen(false);
     setSelectedUser(null);
   };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+        <Skeleton className="h-96" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -461,8 +501,8 @@ export default function AdminUsers() {
               <Button type="button" variant="outline" onClick={() => setIsEmailOpen(false)} className="flex-1">
                 Cancel
               </Button>
-              <Button type="submit" className="flex-1 gradient-primary border-0" disabled={isLoading}>
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
+              <Button type="submit" className="flex-1 gradient-primary border-0" disabled={isSubmitting}>
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}
                 Send Email
               </Button>
             </div>
@@ -495,8 +535,8 @@ export default function AdminUsers() {
               <Button type="button" variant="outline" onClick={() => setIsSuspendOpen(false)} className="flex-1">
                 Cancel
               </Button>
-              <Button type="submit" variant="destructive" className="flex-1" disabled={isLoading}>
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Ban className="w-4 h-4 mr-2" />}
+              <Button type="submit" variant="destructive" className="flex-1" disabled={isSubmitting}>
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Ban className="w-4 h-4 mr-2" />}
                 Confirm Suspend
               </Button>
             </div>

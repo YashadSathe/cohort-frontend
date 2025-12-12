@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,30 +18,58 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { courses } from '@/data/mockData';
 import { 
-  mentorSessions, 
-  getPendingSubmissions, 
-  cohortStudents,
-  getEligibleStudents,
-  MentorSession,
-} from '@/data/mentorMockData';
+  getMentorDashboard, 
+  getMentorSessions, 
+  updateSession,
+  getCohortStudents,
+  getPendingSubmissions,
+} from '@/services/api';
+import type { MentorSession, CohortStudent, StudentSubmission, Course } from '@/services/api/types';
 import { useToast } from '@/hooks/use-toast';
+import { MentorDashboardSkeleton } from '@/components/skeletons/DashboardSkeletons';
 
 export default function MentorDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // Local state for sessions to handle "Start Session"
-  const [sessions, setSessions] = useState(mentorSessions);
+  const [isLoading, setIsLoading] = useState(true);
+  const [sessions, setSessions] = useState<MentorSession[]>([]);
+  const [assignedCourses, setAssignedCourses] = useState<Course[]>([]);
+  const [pendingSubmissions, setPendingSubmissions] = useState<StudentSubmission[]>([]);
+  const [cohortStudents, setCohortStudents] = useState<CohortStudent[]>([]);
+  const [eligibleCount, setEligibleCount] = useState(0);
 
-  // Mock assigned courses (courses assigned to this mentor)
-  const assignedCourses = courses.filter(c => c.mentorId === 'mentor-1');
-  const pendingSubmissions = getPendingSubmissions();
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const [dashboardData, sessionsData, studentsData, submissionsData] = await Promise.all([
+          getMentorDashboard(user.id),
+          getMentorSessions(user.id),
+          getCohortStudents(user.id),
+          getPendingSubmissions(user.id),
+        ]);
+
+        setAssignedCourses(dashboardData.assignedCourses);
+        setSessions(sessionsData);
+        setCohortStudents(studentsData);
+        setPendingSubmissions(submissionsData);
+        setEligibleCount(studentsData.filter(s => s.certificateStatus === 'eligible').length);
+      } catch (error) {
+        console.error('Error fetching mentor dashboard:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.id]);
+
   const upcomingSessions = sessions.filter(s => s.status === 'scheduled');
   const liveSessions = sessions.filter(s => s.status === 'live');
-  const eligibleStudents = getEligibleStudents();
   const totalStudents = cohortStudents.length;
   const activeStudents = cohortStudents.filter(s => {
     const lastActive = new Date(s.lastActive);
@@ -50,17 +78,30 @@ export default function MentorDashboard() {
     return lastActive >= weekAgo;
   }).length;
 
-  const handleStartSession = (sessionId: string) => {
-    setSessions(prev =>
-      prev.map(s =>
-        s.id === sessionId ? { ...s, status: 'live' as const } : s
-      )
-    );
-    toast({
-      title: 'Session Started',
-      description: 'Your live session is now active. Students can join.',
-    });
+  const handleStartSession = async (sessionId: string) => {
+    try {
+      await updateSession(sessionId, { status: 'live' });
+      setSessions(prev =>
+        prev.map(s =>
+          s.id === sessionId ? { ...s, status: 'live' as const } : s
+        )
+      );
+      toast({
+        title: 'Session Started',
+        description: 'Your live session is now active. Students can join.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to start session.',
+        variant: 'destructive',
+      });
+    }
   };
+
+  if (isLoading) {
+    return <MentorDashboardSkeleton />;
+  }
 
   return (
     <div className="space-y-8">
@@ -123,7 +164,7 @@ export default function MentorDashboard() {
               <Award className="w-6 h-6 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{eligibleStudents.length}</p>
+              <p className="text-2xl font-bold">{eligibleCount}</p>
               <p className="text-sm text-muted-foreground">Pending Certs</p>
             </div>
           </CardContent>
@@ -288,7 +329,7 @@ export default function MentorDashboard() {
                 <span className="text-sm text-muted-foreground">Active this week</span>
                 <span className="font-semibold">{activeStudents}/{totalStudents}</span>
               </div>
-              <Progress value={(activeStudents / totalStudents) * 100} className="h-2" />
+              <Progress value={totalStudents > 0 ? (activeStudents / totalStudents) * 100 : 0} className="h-2" />
               
               <div className="pt-4 space-y-3">
                 <p className="text-sm font-medium">Recent Activity</p>
@@ -349,7 +390,7 @@ export default function MentorDashboard() {
           </Card>
 
           {/* Pending Certificates */}
-          {eligibleStudents.length > 0 && (
+          {eligibleCount > 0 && (
             <Card className="border-success/30">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -359,7 +400,7 @@ export default function MentorDashboard() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground mb-3">
-                  {eligibleStudents.length} student(s) have completed all requirements.
+                  {eligibleCount} student(s) have completed all requirements.
                 </p>
                 <Button 
                   className="w-full" 
